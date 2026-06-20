@@ -59,8 +59,8 @@ logging.basicConfig(
 )
 
 # --- ПРОКСИ (удали, когда перенесёшь на сервер) ---
-session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else None
-bot = Bot(token=BOT_TOKEN, session=session)
+
+bot = Bot(token=BOT_TOKEN)
 
 dp = Dispatcher()
 router = Router()
