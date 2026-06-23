@@ -456,7 +456,10 @@ async def cmd_privacy(message: Message):
         "Ознакомьтесь с документом по ссылке ниже:",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📄 Читать политику", url="https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19")],
+                [InlineKeyboardButton(
+                    text="📄 Читать политику",
+                    url="https://telegra.ph/Politika-konfidencialnosti-06-21-31"
+                )],
             ]
         ),
         parse_mode="HTML",
@@ -471,7 +474,10 @@ async def cmd_agreement(message: Message):
         "Ознакомьтесь с документом по ссылке ниже:",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📄 Читать соглашение", url="https://telegra.ph/Politika-konfidencialnosti-04-01-26")],
+                [InlineKeyboardButton(
+                    text="📄 Читать соглашение",
+                    url="https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19"
+                )],
             ]
         ),
         parse_mode="HTML",
