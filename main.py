@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import qrcode
 from aiogram import Bot, Dispatcher, Router, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart
 from aiogram.types import (
     Message,
     CallbackQuery,
@@ -25,33 +25,6 @@ from config import BOT_TOKEN, FREE_TRIAL_DAYS, TARIFFS, PROXY_URL
 from database import db
 from admin import admin_router
 
-from aiogram.types import BotCommand
-
-async def main():
-    await db.init()
-    logging.info("База данных инициализирована")
-
-    dp.include_router(router)
-    dp.include_router(admin_router)
-    
-    # --- ЖЕСТКАЯ РЕГИСТРАЦИЯ КОМАНД ---
-    commands = [
-        BotCommand(command="start", description="🚀 Запустить бота"),
-        BotCommand(command="admin", description="🔧 Админ-панель"),
-        BotCommand(command="privacy", description="🔒 Политика конфиденциальности"),
-        BotCommand(command="agreement", description="📜 Пользовательское соглашение"),
-    ]
-    
-    try:
-        await bot.set_my_commands(commands)
-        logging.info(f"Команды успешно обновлены: {[c.command for c in commands]}")
-    except Exception as e:
-        logging.error(f"Ошибка при установке команд: {e}")
-    # ----------------------------------
-
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
 # --- Логирование ---
 logging.basicConfig(
     level=logging.INFO,
@@ -59,13 +32,14 @@ logging.basicConfig(
 )
 
 # --- ПРОКСИ (удали, когда перенесёшь на сервер) ---
-
-bot = Bot(token=BOT_TOKEN)
+session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else None
+bot = Bot(token=BOT_TOKEN, session=session)
 
 dp = Dispatcher()
 router = Router()
 
 CONGRATS_GIF_PATH = "congratulations.gif"
+WELCOME_PIC_PATH = "Welcomepic.jpg"  # ← новая константа
 
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
@@ -84,9 +58,13 @@ def generate_qr_code(data: str) -> BufferedInputFile:
 # ==================== КЛАВИАТУРЫ ====================
 
 def get_main_keyboard_new_user() -> InlineKeyboardMarkup:
+    """Меню для новых пользователей (триал ещё не использован)."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚀 ПОЛУЧИТЬ 3 ДНЯ БЕСПЛАТНО", callback_data="free_trial", style="success")],
-        [InlineKeyboardButton(text="💎 К тарифам", callback_data="tariffs")],
+        [InlineKeyboardButton(
+            text="➕ Подключить VPN",
+            callback_data="connect_vpn",  # ← ведёт к инструкции, а не к активации
+            style="success",
+        )],
     ])
 
 
@@ -231,6 +209,15 @@ def get_subscription_status(user: dict) -> tuple[str, str, str]:
     return "new", "🎁 доступен", ""
 
 
+def get_welcome_text(name: str) -> str:
+    """Приветственное сообщение для новых пользователей."""
+    return (
+        f"👋 Привет, <b>{name}</b>! Это <b>VPNчик 24</b>\n\n"
+        f"😻 Первые 3 дня — БЕСПЛАТНО\n\n"
+        f"👇 Жми кнопку ниже и подключайся"
+    )
+
+
 def get_profile_text(user: dict) -> str:
     uid = user.get("user_id", "N/A")
     name = user.get("full_name", "Не указано")
@@ -294,20 +281,15 @@ async def delete_old_menu(bot: Bot, chat_id: int, user_id: int) -> None:
 
 
 async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bool = False) -> None:
-    """Единая функция отправки главного меню.
-    Для триала: гифка (только при активации) + динамическое сообщение с ключом.
-    Для остальных: стандартное текстовое меню.
-    """
+    """Единая функция отправки главного меню."""
     await delete_old_menu(bot, chat_id, user_id)
     user_data = await db.get_user(user_id)
     code, _, _ = get_subscription_status(user_data)
 
     if code == "trial_active":
-        # При первой активации отправляем гифку
         if is_activation:
             await bot.send_animation(chat_id=chat_id, animation=FSInputFile(CONGRATS_GIF_PATH))
 
-        # Отправляем динамическое меню с ключом
         key_link = "https://example.com/placeholder_key_trial"
         sent = await bot.send_message(
             chat_id=chat_id,
@@ -315,8 +297,17 @@ async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bo
             reply_markup=get_trial_dynamic_keyboard(key_link),
             parse_mode="HTML",
         )
+    elif code == "new":
+        # Приветственное сообщение с КАРТИНКОЙ
+        name = user_data.get("full_name", "друг")
+        sent = await bot.send_photo(
+            chat_id=chat_id,
+            photo=FSInputFile(WELCOME_PIC_PATH),
+            caption=get_welcome_text(name),
+            reply_markup=get_main_keyboard_new_user(),
+            parse_mode="HTML",
+        )
     else:
-        # Стандартное текстовое меню для всех остальных состояний
         sent = await bot.send_message(
             chat_id=chat_id,
             text=get_profile_text(user_data),
@@ -325,6 +316,7 @@ async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bo
         )
 
     await db.save_menu_message_id(user_id, sent.message_id)
+
 
 
 # ==================== ХЭНДЛЕРЫ ====================
@@ -341,14 +333,6 @@ async def cmd_start(message: Message):
     await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name, referrer_id)
     # При /start не показываем гифку повторно, только меню
     await send_main_menu(bot, message.chat.id, message.from_user.id, is_activation=False)
-
-
-@router.callback_query(F.data == "free_trial")
-async def on_free_trial(callback: CallbackQuery):
-    await db.activate_trial(callback.from_user.id)
-    # При активации показываем гифку + меню
-    await send_main_menu(bot, callback.message.chat.id, callback.from_user.id, is_activation=True)
-    await callback.answer("🎉 Триал активирован!", show_alert=True)
 
 
 @router.callback_query(F.data == "back_to_menu")
@@ -448,49 +432,35 @@ async def on_my_referrals(callback: CallbackQuery):
 async def on_tariff_selected(callback: CallbackQuery):
     await callback.answer("💳 Переходим к оплате...", show_alert=True)
 
-@router.message(Command("privacy"))
-async def cmd_privacy(message: Message):
-    """Политика конфиденциальности."""
-    await message.answer(
-        "🔒 <b>Политика конфиденциальности</b>\n\n"
-        "Ознакомьтесь с документом по ссылке ниже:",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="📄 Читать политику",
-                    url="https://telegra.ph/Politika-konfidencialnosti-06-21-31"
-                )],
-            ]
-        ),
-        parse_mode="HTML",
-    )
-
-
-@router.message(Command("agreement"))
-async def cmd_agreement(message: Message):
-    """Пользовательское соглашение."""
-    await message.answer(
-        "📜 <b>Пользовательское соглашение</b>\n\n"
-        "Ознакомьтесь с документом по ссылке ниже:",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="📄 Читать соглашение",
-                    url="https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19"
-                )],
-            ]
-        ),
-        parse_mode="HTML",
-    )
 
 # ==================== ПОДКЛЮЧЕНИЕ VPN ====================
 
 @router.callback_query(F.data == "connect_vpn")
 async def on_connect_vpn(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "🏁 <b>Шаг 1 из 3</b>\n\nВыберите своё устройство ⤵️",
-        reply_markup=get_device_keyboard(), parse_mode="HTML",
-    )
+    """Шаг 1 из 3 — выбор устройства.
+    
+    Если текущее сообщение — фото (приветственное меню), 
+    то удаляем его и отправляем новое текстовое.
+    Если текущее сообщение — текст, то просто редактируем.
+    """
+    if callback.message.photo:
+        # Это приветственное фото-меню — удаляем и отправляем новое
+        await delete_old_menu(bot, callback.message.chat.id, callback.from_user.id)
+        
+        sent = await callback.message.answer(
+            "🏁 <b>Шаг 1 из 3</b>\n\nВыберите своё устройство ⤵️",
+            reply_markup=get_device_keyboard(),
+            parse_mode="HTML",
+        )
+        await db.save_menu_message_id(callback.from_user.id, sent.message_id)
+    else:
+        # Обычное текстовое меню — просто редактируем
+        await callback.message.edit_text(
+            "🏁 <b>Шаг 1 из 3</b>\n\nВыберите своё устройство ⤵️",
+            reply_markup=get_device_keyboard(),
+            parse_mode="HTML",
+        )
+    
     await callback.answer()
 
 
@@ -517,6 +487,11 @@ async def on_android_step2(cb: CallbackQuery):
 
 @router.callback_query(F.data == "android_step3")
 async def on_android_step3(cb: CallbackQuery):
+    # Активируем триал при первом входе на шаг 3
+    user_data = await db.get_user(cb.from_user.id)
+    if not user_data.get("trial_used", 0):
+        await db.activate_trial(cb.from_user.id)
+    
     key = "https://example.com/placeholder_key_android"
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
@@ -529,10 +504,8 @@ async def on_android_step3(cb: CallbackQuery):
 
 @router.callback_query(F.data == "android_done")
 async def on_android_done(cb: CallbackQuery):
-    # После завершения настройки возвращаемся в главное меню
-    # Если триал ещё активен — покажется динамическое меню с ключом
     await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
-    await cb.answer("✅ VPN успешно активирован!", show_alert=True)
+    await cb.answer()
 
 
 # --- iOS ---
@@ -558,6 +531,10 @@ async def on_ios_step2(cb: CallbackQuery):
 
 @router.callback_query(F.data == "ios_step3")
 async def on_ios_step3(cb: CallbackQuery):
+    user_data = await db.get_user(cb.from_user.id)
+    if not user_data.get("trial_used", 0):
+        await db.activate_trial(cb.from_user.id)
+    
     key = "https://example.com/placeholder_key_ios"
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
@@ -571,7 +548,7 @@ async def on_ios_step3(cb: CallbackQuery):
 @router.callback_query(F.data == "ios_done")
 async def on_ios_done(cb: CallbackQuery):
     await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
-    await cb.answer("✅ VPN успешно активирован!", show_alert=True)
+    await cb.answer()
 
 
 # --- WINDOWS ---
@@ -595,6 +572,10 @@ async def on_windows_step2(cb: CallbackQuery):
 
 @router.callback_query(F.data == "windows_step3")
 async def on_windows_step3(cb: CallbackQuery):
+    user_data = await db.get_user(cb.from_user.id)
+    if not user_data.get("trial_used", 0):
+        await db.activate_trial(cb.from_user.id)
+    
     key = "https://example.com/placeholder_key_windows"
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
@@ -608,7 +589,7 @@ async def on_windows_step3(cb: CallbackQuery):
 @router.callback_query(F.data == "windows_done")
 async def on_windows_done(cb: CallbackQuery):
     await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
-    await cb.answer("✅ VPN успешно активирован!", show_alert=True)
+    await cb.answer()
 
 
 # --- MACOS ---
@@ -634,6 +615,10 @@ async def on_macos_step2(cb: CallbackQuery):
 
 @router.callback_query(F.data == "macos_step3")
 async def on_macos_step3(cb: CallbackQuery):
+    user_data = await db.get_user(cb.from_user.id)
+    if not user_data.get("trial_used", 0):
+        await db.activate_trial(cb.from_user.id)
+    
     key = "https://example.com/placeholder_key_macos"
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
@@ -647,13 +632,18 @@ async def on_macos_step3(cb: CallbackQuery):
 @router.callback_query(F.data == "macos_done")
 async def on_macos_done(cb: CallbackQuery):
     await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
-    await cb.answer("✅ VPN успешно активирован!", show_alert=True)
+    await cb.answer()
 
 
 # --- ANDROID TV ---
 
 @router.callback_query(F.data == "connect_android_tv")
 async def on_connect_android_tv(cb: CallbackQuery):
+    # Активируем триал при выборе Android TV
+    user_data = await db.get_user(cb.from_user.id)
+    if not user_data.get("trial_used", 0):
+        await db.activate_trial(cb.from_user.id)
+    
     await cb.message.edit_text(
         "Нажмите на кнопку ниже и следуйте инструкции 👇",
         reply_markup=_tv_step2_kb(), parse_mode="HTML",
@@ -664,7 +654,7 @@ async def on_connect_android_tv(cb: CallbackQuery):
 @router.callback_query(F.data == "android_tv_done")
 async def on_android_tv_done(cb: CallbackQuery):
     await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
-    await cb.answer("✅ VPN успешно активирован!", show_alert=True)
+    await cb.answer()
 
 
 # ==================== ТОЧКА ВХОДА ====================
