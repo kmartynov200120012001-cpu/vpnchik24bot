@@ -79,19 +79,24 @@ def get_main_keyboard_before_activation() -> InlineKeyboardMarkup:
 def get_main_keyboard_after_activation() -> InlineKeyboardMarkup:
     """Стандартное меню для ПЛАТНЫХ подписок (не триал)."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📖 Инструкция", callback_data="connect_vpn", style="primary")],
         [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
         [InlineKeyboardButton(text="🫂 Получить месяц бесплатно", callback_data="referral")],
-        [InlineKeyboardButton(text="💬 Поддержка", callback_data="support")],
+        [
+            InlineKeyboardButton(text="📖 Инструкция", callback_data="connect_vpn"),
+            InlineKeyboardButton(text="💬 Поддержка", callback_data="support"),
+        ],
     ])
+
 
 def get_trial_dynamic_keyboard(key_link: str) -> InlineKeyboardMarkup:
     """Динамическое меню для всего периода действия триала."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📖 Инструкция", callback_data="connect_vpn", style="primary")],
         [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
         [InlineKeyboardButton(text="🫂 Пригласить друзей", callback_data="referral")],
-        [InlineKeyboardButton(text="💬 Поддержка", callback_data="support")],
+        [
+            InlineKeyboardButton(text="📖 Инструкция", callback_data="connect_vpn"),
+            InlineKeyboardButton(text="💬 Поддержка", callback_data="support"),
+        ],
     ])
 
 
