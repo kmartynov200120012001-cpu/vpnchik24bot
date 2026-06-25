@@ -3,7 +3,7 @@
 import asyncio
 import io
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
 import qrcode
@@ -32,8 +32,8 @@ logging.basicConfig(
 )
 
 # --- ПРОКСИ (удали, когда перенесёшь на сервер) ---
-
-bot = Bot(token=BOT_TOKEN)
+session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else None
+bot = Bot(token=BOT_TOKEN, session=session)
 
 dp = Dispatcher()
 router = Router()
@@ -53,6 +53,18 @@ def generate_qr_code(data: str) -> BufferedInputFile:
     img.save(buffer, format="PNG")
     buffer.seek(0)
     return BufferedInputFile(buffer.read(), filename="qr_code.png")
+
+
+def get_days_since_registration(created_at_str: str) -> int:
+    """Рассчитывает количество дней с момента регистрации."""
+    if not created_at_str:
+        return 0
+    try:
+        created_at = datetime.fromisoformat(created_at_str)
+        delta = datetime.now() - created_at
+        return max(0, delta.days)
+    except (ValueError, TypeError):
+        return 0
 
 
 # ==================== КЛАВИАТУРЫ ====================
@@ -222,21 +234,110 @@ def get_welcome_text(name: str) -> str:
     )
 
 
-def get_profile_text(user: dict) -> str:
+def get_paid_profile_text(user: dict) -> str:
+    """Текст профиля для активной платной подписки (2 варианта)."""
     uid = user.get("user_id", "N/A")
     name = user.get("full_name", "Не указано")
-    code, status, date_str = get_subscription_status(user)
+    ends_at_str = user.get("subscription_ends_at")
+    created_at_str = user.get("created_at")
+    
+    days_with_us = get_days_since_registration(created_at_str)
+    
+    # Плейсхолдер для ключа (в реальности должен браться из БД или генерироваться)
+    key_link = "https://example.com/placeholder_key_paid"
 
+    if not ends_at_str:
+        return get_profile_text(user) # Fallback
+
+    try:
+        ends_at = datetime.fromisoformat(ends_at_str)
+        now = datetime.now()
+        delta = ends_at - now
+        
+        if delta.total_seconds() <= 0:
+             return get_profile_text(user) # Истекла
+
+        # Форматируем дату окончания
+        end_date_fmt = ends_at.strftime("%d %B %Y, %H:%M")
+        # Русские месяцы можно добавить через словарь, но пока оставим стандартный формат или простой перевод
+        months_ru = {
+            "January": "января", "February": "февраля", "March": "марта", "April": "апреля",
+            "May": "мая", "June": "июня", "July": "июля", "August": "августа",
+            "September": "сентября", "October": "октября", "November": "ноября", "December": "декабря"
+        }
+        # Простая замена месяца
+        for eng, ru in months_ru.items():
+            end_date_fmt = end_date_fmt.replace(eng, ru)
+            
+        # Расчет оставшегося времени
+        days_left = delta.days
+        hours_left = delta.seconds // 3600
+        
+        if days_left > 3:
+            # Вариант 1: Больше 3 дней
+            text = (
+                f"🟢 <b>VPN подключен</b>\n\n"
+                f"Вы с нами уже {days_with_us} дней 🔥\n\n"
+                f"<b>Подписка действует до</b> <i>{end_date_fmt}</i>\n\n"
+                f"Продлить доступ можно в любой момент – без потери текущего периода\n\n"
+                f"🔑 Ваш ключ доступа:\n"
+                f"<blockquote><code>{key_link}</code></blockquote>"
+            )
+        else:
+            # Вариант 2: 3 дня и меньше
+            time_left_text = f"{days_left} дня {hours_left} часов" if days_left > 0 else f"{hours_left} часов"
+            # Склонение дней
+            if days_left == 1:
+                time_left_text = time_left_text.replace("дня", "день")
+            elif days_left == 0:
+                 time_left_text = f"{hours_left} часов"
+            
+            text = (
+                f"🟡 <b>VPN подключен</b>\n\n"
+                f"Подписка скоро закончится ⏳\n"
+                f"<b>Осталось:</b> <i>{time_left_text}</i>\n\n"
+                f"Продлите заранее, чтобы не потерять доступ к VPN\n\n"
+                f"🔑 Ваш ключ доступа:\n"
+                f"<blockquote><code>{key_link}</code></blockquote>"
+            )
+            
+    except Exception as e:
+        logging.error(f"Error formatting paid profile: {e}")
+        return get_profile_text(user)
+
+    return text
+
+
+def get_profile_text(user: dict) -> str:
+    """Общая функция профиля. Для платных использует новую логику."""
+    code, _, _ = get_subscription_status(user)
+    
+    if code == "active":
+        return get_paid_profile_text(user)
+        
+    # Старая логика для остальных случаев
+    uid = user.get("user_id", "N/A")
+    name = user.get("full_name", "Не указано")
+    status, msg_short = "", ""
+    
     if code == "new":
-        msg = f"Вам доступен бесплатный период на {FREE_TRIAL_DAYS} дня!"
-    elif code in ("active", "trial_active"):
-        msg = f"Действует до: {date_str}"
+        msg_short = f"Вам доступен бесплатный период на {FREE_TRIAL_DAYS} дня!"
+    elif code == "trial_active":
+         _, _, date_str = get_subscription_status(user)
+         msg_short = f"Действует до: {date_str}"
     else:
-        msg = "Оформите подписку, чтобы продолжить."
+        msg_short = "Оформите подписку, чтобы продолжить."
+        
+    status_map = {
+        "new": "🎁 доступен",
+        "trial_active": "🎁 триал активен",
+        "expired": "❌ истёк"
+    }
+    status = status_map.get(code, "")
 
     return (
         f"👤 <b>Профиль:</b>\n<blockquote>ID: <code>{uid}</code>\nИмя: {name}</blockquote>\n\n"
-        f"🎁 <b>Подписка:</b>\n<blockquote>Статус: {status}\n\n<i>{msg}</i></blockquote>"
+        f"🎁 <b>Подписка:</b>\n<blockquote>Статус: {status}\n\n<i>{msg_short}</i></blockquote>"
     )
 
 
@@ -734,6 +835,8 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot stopped")
