@@ -1,6 +1,7 @@
 # config.py
 
-BOT_TOKEN = "***REMOVED***"  # ← вставьте токен от @BotFather
+import os
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # --- АДМИН ---
 ADMIN_ID = 907393161  # ← ваш Telegram ID
