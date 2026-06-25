@@ -40,6 +40,25 @@ class Database:
                 except Exception:
                     pass
 
+            # --- Таблица транзакций (платежи через Platega) ---
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS transactions (
+                    transaction_id  TEXT PRIMARY KEY,
+                    user_id         INTEGER NOT NULL,
+                    tariff_callback TEXT NOT NULL,
+                    months          INTEGER NOT NULL,
+                    days            INTEGER NOT NULL,
+                    amount          REAL NOT NULL,
+                    currency        TEXT NOT NULL DEFAULT 'RUB',
+                    status          TEXT NOT NULL DEFAULT 'PENDING',
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            await db.commit()
+
     async def add_user(
         self, user_id: int, username: str, full_name: str, referrer_id: int | None = None
     ) -> bool:
@@ -143,6 +162,46 @@ class Database:
             )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
+
+    # ==================== ТРАНЗАКЦИИ (ОПЛАТА) ====================
+
+    async def create_transaction(
+        self,
+        transaction_id: str,
+        user_id: int,
+        tariff_callback: str,
+        months: int,
+        days: int,
+        amount: float,
+        currency: str = "RUB",
+    ) -> None:
+        """Сохраняет созданную, но ещё не оплаченную транзакцию."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "INSERT INTO transactions "
+                "(transaction_id, user_id, tariff_callback, months, days, amount, currency, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')",
+                (transaction_id, user_id, tariff_callback, months, days, amount, currency),
+            )
+            await db.commit()
+
+    async def get_transaction(self, transaction_id: str) -> dict | None:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM transactions WHERE transaction_id = ?", (transaction_id,)
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    async def update_transaction_status(self, transaction_id: str, status: str) -> None:
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE transactions SET status = ?, updated_at = CURRENT_TIMESTAMP "
+                "WHERE transaction_id = ?",
+                (status, transaction_id),
+            )
+            await db.commit()
 
     # ==================== АДМИН-МЕТОДЫ ====================
 
