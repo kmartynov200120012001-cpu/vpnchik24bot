@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import qrcode
 from aiogram import Bot, Dispatcher, Router, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import (
     Message,
     CallbackQuery,
@@ -32,14 +32,14 @@ logging.basicConfig(
 )
 
 # --- ПРОКСИ (удали, когда перенесёшь на сервер) ---
-
-bot = Bot(token=BOT_TOKEN)
+session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else None
+bot = Bot(token=BOT_TOKEN, session=session)
 
 dp = Dispatcher()
 router = Router()
 
 CONGRATS_GIF_PATH = "congratulations.gif"
-WELCOME_PIC_PATH = "Welcomepic.jpg"  # ← новая константа
+WELCOME_PIC_PATH = "Welcomepic.jpg"
 
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
@@ -62,7 +62,7 @@ def get_main_keyboard_new_user() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="➕ Подключить VPN",
-            callback_data="connect_vpn",  # ← ведёт к инструкции, а не к активации
+            callback_data="connect_vpn",
             style="success",
         )],
     ])
@@ -79,17 +79,16 @@ def get_main_keyboard_before_activation() -> InlineKeyboardMarkup:
 def get_main_keyboard_after_activation() -> InlineKeyboardMarkup:
     """Стандартное меню для ПЛАТНЫХ подписок (не триал)."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Подключить VPN", callback_data="connect_vpn", style="primary")],
+        [InlineKeyboardButton(text="📖 Инструкция", callback_data="connect_vpn", style="primary")],
         [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
         [InlineKeyboardButton(text="🫂 Получить месяц бесплатно", callback_data="referral")],
         [InlineKeyboardButton(text="💬 Поддержка", callback_data="support")],
     ])
 
-
 def get_trial_dynamic_keyboard(key_link: str) -> InlineKeyboardMarkup:
     """Динамическое меню для всего периода действия триала."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Подключить VPN", callback_data="connect_vpn", style="primary")],
+        [InlineKeyboardButton(text="📖 Инструкция", callback_data="connect_vpn", style="primary")],
         [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
         [InlineKeyboardButton(text="🫂 Пригласить друзей", callback_data="referral")],
         [InlineKeyboardButton(text="💬 Поддержка", callback_data="support")],
@@ -238,16 +237,37 @@ def get_profile_text(user: dict) -> str:
 
 def get_trial_welcome_text(user: dict, key_link: str) -> str:
     """Текст динамического меню на весь период триала."""
-    _, _, date_str = get_subscription_status(user)
+    ends_at_str = user.get("subscription_ends_at")
+    
+    # Рассчитываем оставшееся время
+    remaining_text = "—"
+    if ends_at_str:
+        try:
+            ends_at = datetime.fromisoformat(ends_at_str)
+            now = datetime.now()
+            if ends_at > now:
+                delta = ends_at - now
+                days = delta.days
+                hours = delta.seconds // 3600
+                
+                # Форматируем текст
+                if days > 0:
+                    day_word = "день" if days == 1 else "дня" if days < 5 else "дней"
+                    remaining_text = f"{days} {day_word} {hours} часа"
+                else:
+                    remaining_text = f"{hours} часа"
+        except (ValueError, TypeError):
+            pass
 
     return (
-        f"<b>🎉 Пробный период активирован!</b>\n"
+        f"🟢 <b>VPN работает</b>\n"
         f"\n"
-        f"<blockquote><b>Лимит трафика:</b> 10 Гб\n"
-        f"<b>Лимит устройств:</b> 5 устройств\n"
-        f"<b>Доступ до:</b> {date_str}</blockquote>\n"
+        f"<blockquote>До 5 устройств\n"
+        f"<b>Осталось:</b> <i>{remaining_text}</i></blockquote>\n"
         f"\n"
-        f"🔑 <b>Ключ доступа:</b>\n"
+        f"💎 Продлить доступ можно в любой момент\n"
+        f"\n"
+        f"🔑 <b>Ваш ключ доступа:</b>\n"
         f"<blockquote><code>{key_link}</code></blockquote>\n"
     )
 
@@ -318,7 +338,6 @@ async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bo
     await db.save_menu_message_id(user_id, sent.message_id)
 
 
-
 # ==================== ХЭНДЛЕРЫ ====================
 
 @router.message(CommandStart())
@@ -331,13 +350,18 @@ async def cmd_start(message: Message):
             pass
 
     await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name, referrer_id)
-    # При /start не показываем гифку повторно, только меню
     await send_main_menu(bot, message.chat.id, message.from_user.id, is_activation=False)
+
+
+@router.callback_query(F.data == "free_trial")
+async def on_free_trial(callback: CallbackQuery):
+    await db.activate_trial(callback.from_user.id)
+    await send_main_menu(bot, callback.message.chat.id, callback.from_user.id, is_activation=True)
+    await callback.answer("🎉 Триал активирован!", show_alert=True)
 
 
 @router.callback_query(F.data == "back_to_menu")
 async def on_back_to_menu(callback: CallbackQuery):
-    # Возврат в меню: если триал активен — покажется динамическое меню с ключом
     await send_main_menu(bot, callback.message.chat.id, callback.from_user.id, is_activation=False)
     await callback.answer()
 
@@ -655,6 +679,44 @@ async def on_connect_android_tv(cb: CallbackQuery):
 async def on_android_tv_done(cb: CallbackQuery):
     await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
     await cb.answer()
+
+
+# ==================== ЮРИДИЧЕСКИЕ КОМАНДЫ ====================
+
+@router.message(Command("privacy"))
+async def cmd_privacy(message: Message):
+    """Политика конфиденциальности."""
+    await message.answer(
+        "🔒 <b>Политика конфиденциальности</b>\n\n"
+        "Ознакомьтесь с документом по ссылке ниже:",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="📄 Читать политику",
+                    url="https://telegra.ph/Politika-konfidencialnosti-06-21-31"
+                )],
+            ]
+        ),
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("agreement"))
+async def cmd_agreement(message: Message):
+    """Пользовательское соглашение."""
+    await message.answer(
+        "📜 <b>Пользовательское соглашение</b>\n\n"
+        "Ознакомьтесь с документом по ссылке ниже:",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="📄 Читать соглашение",
+                    url="https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19"
+                )],
+            ]
+        ),
+        parse_mode="HTML",
+    )
 
 
 # ==================== ТОЧКА ВХОДА ====================
