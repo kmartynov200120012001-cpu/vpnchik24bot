@@ -24,6 +24,8 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from config import BOT_TOKEN, FREE_TRIAL_DAYS, TARIFFS, PROXY_URL
 from database import db
 from admin import admin_router
+from payments import create_payment
+from webhook import run_webhook_server
 
 # --- Логирование ---
 logging.basicConfig(
@@ -31,7 +33,6 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
-# --- ПРОКСИ (удали, когда перенесёшь на сервер) ---
 
 bot = Bot(token=BOT_TOKEN)
 
@@ -236,12 +237,7 @@ def get_welcome_text(name: str) -> str:
 
 def get_paid_profile_text(user: dict) -> str:
     """Текст профиля для активной платной подписки (2 варианта)."""
-    uid = user.get("user_id", "N/A")
-    name = user.get("full_name", "Не указано")
     ends_at_str = user.get("subscription_ends_at")
-    created_at_str = user.get("created_at")
-    
-    days_with_us = get_days_since_registration(created_at_str)
     
     # Плейсхолдер для ключа (в реальности должен браться из БД или генерироваться)
     key_link = "https://example.com/placeholder_key_paid"
@@ -259,13 +255,12 @@ def get_paid_profile_text(user: dict) -> str:
 
         # Форматируем дату окончания
         end_date_fmt = ends_at.strftime("%d %B %Y, %H:%M")
-        # Русские месяцы можно добавить через словарь, но пока оставим стандартный формат или простой перевод
+        # Русские месяцы
         months_ru = {
             "January": "января", "February": "февраля", "March": "марта", "April": "апреля",
             "May": "мая", "June": "июня", "July": "июля", "August": "августа",
             "September": "сентября", "October": "октября", "November": "ноября", "December": "декабря"
         }
-        # Простая замена месяца
         for eng, ru in months_ru.items():
             end_date_fmt = end_date_fmt.replace(eng, ru)
             
@@ -279,24 +274,26 @@ def get_paid_profile_text(user: dict) -> str:
                 f"🟢 <b>VPN подключен</b>\n\n"
                 f"<b>Подписка действует до</b> <i>{end_date_fmt}</i>\n\n"
                 f"Продлить доступ можно в любой момент – без потери текущего периода\n\n"
-                f"🔑 Ваш ключ доступа:\n"
+                f"🔑 <b>Ваш ключ доступа:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
         else:
             # Вариант 2: 3 дня и меньше
-            time_left_text = f"{days_left} дня {hours_left} часов" if days_left > 0 else f"{hours_left} часов"
-            # Склонение дней
-            if days_left == 1:
-                time_left_text = time_left_text.replace("дня", "день")
-            elif days_left == 0:
-                 time_left_text = f"{hours_left} часов"
+            # Склонение дней и часов
+            if days_left > 0:
+                day_word = "день" if days_left == 1 else "дня" if days_left < 5 else "дней"
+                hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
+                time_left_text = f"{days_left} {day_word} {hours_left} {hour_word}"
+            else:
+                hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
+                time_left_text = f"{hours_left} {hour_word}"
             
             text = (
                 f"🟡 <b>VPN подключен</b>\n\n"
                 f"Подписка скоро закончится ⏳\n"
                 f"<b>Осталось:</b> <i>{time_left_text}</i>\n\n"
                 f"Продлите заранее, чтобы не потерять доступ к VPN\n\n"
-                f"🔑 Ваш ключ доступа:\n"
+                f"🔑 <b>Ваш ключ доступа:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
             
@@ -559,7 +556,59 @@ async def on_my_referrals(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("tariff_"))
 async def on_tariff_selected(callback: CallbackQuery):
-    await callback.answer("💳 Переходим к оплате...", show_alert=True)
+    await callback.answer("💳 Создаём ссылку на оплату...")
+
+    tariff_cb = callback.data
+    tariff = next((t for t in TARIFFS if t["callback"] == tariff_cb), None)
+    if not tariff:
+        await callback.message.answer("⚠️ Тариф не найден, попробуйте выбрать снова.")
+        return
+
+    days = tariff["days"]
+
+    try:
+        payment = await create_payment(
+            amount=tariff["price"],
+            description=f"Подписка VPNчик24 — {tariff['name']}",
+            user_id=callback.from_user.id,
+            username=callback.from_user.username,
+        )
+    except Exception as e:
+        logging.error(f"Ошибка создания платежа Platega: {e}")
+        await callback.message.answer(
+            "⚠️ Не удалось создать ссылку на оплату. Попробуйте позже или обратитесь в поддержку."
+        )
+        return
+
+    transaction_id = payment.get("transactionId")
+    pay_url = payment.get("redirect")
+
+    if not transaction_id or not pay_url:
+        logging.error(f"Platega вернула неожиданный ответ: {payment}")
+        await callback.message.answer("⚠️ Ошибка при создании платежа. Попробуйте позже.")
+        return
+
+    await db.create_transaction(
+        transaction_id=transaction_id,
+        user_id=callback.from_user.id,
+        tariff_callback=tariff_cb,
+        months=tariff["months"],
+        days=days,
+        amount=tariff["price"],
+    )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить", url=pay_url)],
+        [InlineKeyboardButton(text="← Назад к тарифам", callback_data="tariffs")],
+    ])
+    await callback.message.edit_text(
+        f"🌐 <b>Оплата тарифа «{tariff['name']}»</b>\n\n"
+        f"Сумма: <b>{tariff['price']} ₽</b>\n\n"
+        "Нажмите «Оплатить» и завершите платёж. "
+        "После успешной оплаты подписка продлится автоматически — вы получите уведомление здесь.",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
 
 
 # ==================== ПОДКЛЮЧЕНИЕ VPN ====================
@@ -832,6 +881,10 @@ async def main():
     dp.include_router(router)
     dp.include_router(admin_router)
     await bot.delete_webhook(drop_pending_updates=True)
+
+    # Запускаем сервер приёма callback'ов от Platega параллельно с polling
+    await run_webhook_server(bot)
+
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
