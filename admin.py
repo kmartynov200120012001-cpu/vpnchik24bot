@@ -92,6 +92,7 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📨 Рассылка", callback_data="admin_broadcast")],
             [InlineKeyboardButton(text="⏰ Управление подпиской", callback_data="admin_subscription")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
+            [InlineKeyboardButton(text="🔄 Стать новым пользователем", callback_data="admin_reset_self")],
         ]
     )
 
@@ -476,7 +477,50 @@ async def on_sub_end(callback: CallbackQuery):
     await callback.answer("❌ Подписка завершена + уведомление", show_alert=True)
 
 
-# ==================== РАССЫЛКА ====================
+# ==================== СБРОС СЕБЯ КАК НОВОГО ПОЛЬЗОВАТЕЛЯ ====================
+
+@admin_router.callback_query(F.data == "admin_reset_self")
+async def on_admin_reset_self_confirm(callback: CallbackQuery):
+    """Экран подтверждения перед сбросом — чтобы не удалить себя случайно."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "🔄 <b>Стать новым пользователем</b>\n\n"
+        "Это удалит вашу запись из базы (триал, подписку, историю транзакций) — "
+        "так, как будто вы запускаете бота первый раз.\n\n"
+        "Это действие необратимо. Продолжить?",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Да, сбросить меня", callback_data="admin_reset_self_confirmed")],
+                [InlineKeyboardButton(text="↩️ Отмена", callback_data="admin_panel")],
+            ]
+        ),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data == "admin_reset_self_confirmed")
+async def on_admin_reset_self_confirmed(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
+        return
+
+    user_id = callback.from_user.id
+    await db.reset_user(user_id)
+
+    await callback.message.edit_text(
+        "✅ <b>Готово!</b>\n\n"
+        "Ваша запись удалена из базы. Отправьте команду /start, "
+        "чтобы пройти онбординг как новый пользователь.",
+        parse_mode="HTML",
+    )
+    await callback.answer("🔄 Вы сброшены как новый пользователь", show_alert=True)
+
+
+
 
 @admin_router.callback_query(F.data == "admin_broadcast")
 async def on_admin_broadcast_start(callback: CallbackQuery, state: FSMContext):
