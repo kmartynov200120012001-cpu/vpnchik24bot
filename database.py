@@ -142,6 +142,20 @@ class Database:
             )
             await db.commit()
 
+    async def reset_user(self, user_id: int) -> bool:
+        """
+        Полностью удаляет пользователя и связанные с ним транзакции из БД,
+        как если бы он никогда не запускал бота. Следующий /start создаст
+        запись заново со значениями по умолчанию (trial_used=0, is_trial=0 и т.д.).
+        Используется в админке для тестирования сценария "новый пользователь"
+        без удаления всей базы bot.db.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+            await db.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
+            await db.commit()
+            return cursor.rowcount > 0
+
     # ==================== РЕФЕРАЛЫ ====================
 
     async def get_referrals_count(self, user_id: int) -> int:
