@@ -68,10 +68,18 @@ class XUIClient:
         url = _panel_url("/")
         async with session.get(url) as resp:
             html = await resp.text()
+            cookies_received = resp.cookies
+            logging.info(
+                f"3x-ui GET / response: status={resp.status}, "
+                f"cookies={ {k: v.value for k, v in cookies_received.items()} }, "
+                f"session_cookies={ {c.key: c.value for c in session.cookie_jar} }"
+            )
         match = CSRF_TOKEN_RE.search(html)
         if not match:
-            raise RuntimeError("3x-ui: не удалось найти csrf-token на странице логина")
-        return match.group(1)
+            raise RuntimeError(f"3x-ui: не удалось найти csrf-token на странице логина. HTML[:300]={html[:300]!r}")
+        token = match.group(1)
+        logging.info(f"3x-ui: csrf-token получен: {token[:20]}...")
+        return token
 
     async def login(self) -> None:
         self._csrf_token = await self._fetch_csrf_token()
@@ -83,9 +91,19 @@ class XUIClient:
             data={"username": XUI_USERNAME, "password": XUI_PASSWORD},
             headers={"X-CSRF-Token": self._csrf_token},
         ) as resp:
-            data = await resp.json(content_type=None)
+            raw_text = await resp.text()
+            logging.info(
+                f"3x-ui login response: status={resp.status}, "
+                f"headers={dict(resp.headers)}, body={raw_text[:500]!r}"
+            )
+            try:
+                import json as _json
+                data = _json.loads(raw_text) if raw_text else None
+            except Exception:
+                data = None
+
             if not data or not data.get("success", False):
-                raise RuntimeError(f"3x-ui login failed: {data}")
+                raise RuntimeError(f"3x-ui login failed: status={resp.status}, body={raw_text[:300]!r}")
             self._logged_in = True
             logging.info("3x-ui: успешный логин в панель")
 
