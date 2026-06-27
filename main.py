@@ -658,9 +658,9 @@ async def get_or_create_subscription_link(user_id: int) -> str:
     Срок действия клиента в 3x-ui синхронизируется отдельно при оплате (см. webhook.py),
     эта функция отвечает только за выдачу ссылки и первичное создание клиента.
     """
-    client_uuid, sub_id = await db.get_xui_client(user_id)
+    email, sub_id = await db.get_xui_client(user_id)
 
-    if client_uuid and sub_id:
+    if email and sub_id:
         return xui.build_subscription_url(sub_id)
 
     # Клиента ещё нет — создаём с пробным сроком
@@ -670,7 +670,7 @@ async def get_or_create_subscription_link(user_id: int) -> str:
         logging.error(f"Не удалось создать 3x-ui клиента для {user_id}: {e}")
         return "⚠️ Не удалось сгенерировать ключ. Попробуйте позже или напишите в поддержку."
 
-    await db.save_xui_client(user_id, result["client_uuid"], result["sub_id"])
+    await db.save_xui_client(user_id, result["email"], result["sub_id"])
     return xui.build_subscription_url(result["sub_id"])
 
 
