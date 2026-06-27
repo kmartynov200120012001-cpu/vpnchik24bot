@@ -174,10 +174,13 @@ class XUIClient:
         user_id: int,
         days: int,
         inbound_id: int = XUI_INBOUND_ID,
+        flow: str = "xtls-rprx-vision",
     ) -> dict:
         """
         Создаёт нового клиента через новый Clients API.
         UUID генерируется панелью автоматически (не передаём "id").
+        flow="xtls-rprx-vision" обязателен для VLESS+Reality на TCP — без него
+        клиент проходит TLS-handshake, но реальный трафик не проксируется.
         Возвращает {"sub_id": ..., "email": ...}.
         days<=0 означает "без ограничения по времени" (expiryTime=0).
         """
@@ -193,6 +196,7 @@ class XUIClient:
             "client": {
                 "email": email,
                 "subId": sub_id,
+                "flow": flow,
                 "totalGB": 0,
                 "expiryTime": expiry_time_ms,
                 "tgId": user_id,
@@ -206,7 +210,7 @@ class XUIClient:
         if not data.get("success", False):
             raise RuntimeError(f"3x-ui add_client failed: {data}")
 
-        logging.info(f"3x-ui: создан клиент {email} (subId={sub_id}) на {days} дн.")
+        logging.info(f"3x-ui: создан клиент {email} (subId={sub_id}, flow={flow}) на {days} дн.")
         return {"sub_id": sub_id, "email": email}
 
     async def get_client(self, email: str) -> dict | None:
@@ -247,6 +251,21 @@ class XUIClient:
             raise RuntimeError(f"3x-ui update_client_expiry failed: {data}")
 
         logging.info(f"3x-ui: клиент {email} продлён на {days} дн. (новый expiryTime={expiry_time_ms})")
+
+    async def set_client_flow(self, email: str, flow: str = "xtls-rprx-vision") -> None:
+        """
+        Принудительно выставляет flow существующему клиенту, не трогая остальные поля.
+        Нужен для разовой миграции клиентов, созданных до того, как flow стало
+        обязательным полем в add_client (см. историю/коммит, где это было исправлено).
+        """
+        current = await self.get_client(email)
+        if current is None:
+            raise RuntimeError(f"3x-ui: клиент с email {email} не найден")
+        current["flow"] = flow
+        data = await self._request("POST", f"/panel/api/clients/update/{email}", json=current)
+        if not data.get("success", False):
+            raise RuntimeError(f"3x-ui set_client_flow failed: {data}")
+        logging.info(f"3x-ui: клиенту {email} установлен flow={flow}")
 
     async def delete_client(self, email: str) -> None:
         """Удаляет клиента — например, при полном сбросе пользователя в админке."""
