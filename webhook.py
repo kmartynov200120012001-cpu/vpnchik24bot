@@ -58,12 +58,12 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
 
         # Создаём или продлеваем реального VPN-клиента в 3x-ui
         try:
-            client_uuid, sub_id = await db.get_xui_client(user_id)
-            if client_uuid:
-                await xui.update_client_expiry(client_uuid, days, extend=True)
+            email, sub_id = await db.get_xui_client(user_id)
+            if email:
+                await xui.update_client_expiry(email, days, extend=True)
             else:
                 result = await xui.add_client(user_id=user_id, days=days)
-                await db.save_xui_client(user_id, result["client_uuid"], result["sub_id"])
+                await db.save_xui_client(user_id, result["email"], result["sub_id"])
         except Exception as e:
             logging.error(f"Не удалось создать/продлить 3x-ui клиента для {user_id} (tx={transaction_id}): {e}")
             # Подписка в нашей БД уже продлена — пользователь не останется без доступа полностью,
