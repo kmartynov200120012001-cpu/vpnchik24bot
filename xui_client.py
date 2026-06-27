@@ -214,11 +214,18 @@ class XUIClient:
         return {"sub_id": sub_id, "email": email}
 
     async def get_client(self, email: str) -> dict | None:
-        """Возвращает клиента по email, либо None, если не найден."""
+        """
+        Возвращает клиента по email, либо None, если не найден.
+        Ответ панели имеет вид {"success": true, "obj": {"client": {...}, "externalLinks": [...],
+        "inboundIds": [...], "usedTraffic": ...}} — нам нужен именно вложенный "client".
+        """
         data = await self._request("GET", f"/panel/api/clients/get/{email}")
         if not data.get("success", False):
             return None
-        return data.get("obj")
+        obj = data.get("obj")
+        if not obj:
+            return None
+        return obj.get("client")
 
     async def update_client_expiry(self, email: str, days: int, extend: bool = True) -> None:
         """
