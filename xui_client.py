@@ -36,12 +36,8 @@ CSRF_TOKEN_RE = re.compile(r'<meta name="csrf-token" content="([^"]+)"')
 
 
 def _panel_url(path: str) -> str:
-    """Склеивает базовый URL панели + webBasePath + путь API."""
     base = XUI_BASE_URL.rstrip("/")
-    web_base = XUI_WEB_BASE_PATH.strip("/")
     path = path.lstrip("/")
-    if web_base:
-        return f"{base}/{web_base}/{path}"
     return f"{base}/{path}"
 
 
