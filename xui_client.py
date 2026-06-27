@@ -1,21 +1,25 @@
 # xui_client.py
 """
-Обёртка над API панели 3x-ui: логин, создание/продление клиента в inbound,
-получение subscription URL и сборка vless-ссылки.
+Обёртка над API панели 3x-ui (v3.4.x — новый "Clients" API).
 
-Документация по эндпоинтам (неофициальная, собрана из исходников и Postman-коллекций):
-  POST {base}/login                                  — авторизация, ставит cookie "session"
-  GET  {base}/panel/api/inbounds/get/{id}             — детали inbound (включая Reality-параметры)
-  POST {base}/panel/api/inbounds/addClient            — добавить клиента
-  POST {base}/panel/api/inbounds/{id}/delClient/{uuid}— удалить клиента
-  POST {base}/panel/api/inbounds/updateClient/{uuid}  — обновить клиента (например, продлить срок)
+Авторизация в этой версии панели использует CSRF-синхронизатор:
+  1. GET {base}/  — отдаёт HTML с <meta name="csrf-token" content="..."> и ставит cookie "3x-ui"
+  2. POST {base}/login — username/password + заголовок X-CSRF-Token (из шага 1) + та же cookie
+  3. Все последующие POST-запросы тоже требуют X-CSRF-Token из ШАГА 1 (GET-запросы — нет)
+
+Эндпоинты (см. {base}/panel/api/openapi.json на самой панели):
+  GET  /panel/api/inbounds/get/{id}        — детали inbound (Reality-параметры, список клиентов)
+  POST /panel/api/clients/add              — создать клиента; {"client": {...}, "inboundIds": [id]}
+  GET  /panel/api/clients/get/{email}       — клиент по email
+  POST /panel/api/clients/update/{email}    — обновить клиента (полная замена строки)
+  POST /panel/api/clients/del/{email}       — удалить клиента
+  GET  /panel/api/clients/subLinks/{subId}  — JSON-массив готовых ссылок (vless://...) для subId
 """
 
-import json
 import logging
+import re
 import secrets
 import string
-import uuid as uuid_lib
 
 import aiohttp
 
@@ -26,8 +30,9 @@ from config import (
     XUI_PASSWORD,
     XUI_INBOUND_ID,
     XUI_PUBLIC_HOST,
-    XUI_PUBLIC_PORT,
 )
+
+CSRF_TOKEN_RE = re.compile(r'<meta name="csrf-token" content="([^"]+)"')
 
 
 def _panel_url(path: str) -> str:
@@ -41,7 +46,7 @@ def _panel_url(path: str) -> str:
 
 
 def _gen_sub_id(length: int = 16) -> str:
-    """Генерирует случайный subId — панель сама его не создаёт при добавлении через API."""
+    """Генерирует случайный subId для клиента."""
     alphabet = string.ascii_lowercase + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
@@ -49,62 +54,96 @@ def _gen_sub_id(length: int = 16) -> str:
 class XUIClient:
     def __init__(self):
         self._session: aiohttp.ClientSession | None = None
+        self._csrf_token: str | None = None
         self._logged_in = False
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            # cookie_jar хранит сессию между запросами — именно так передаётся "session" cookie
             self._session = aiohttp.ClientSession()
         return self._session
 
+    async def _fetch_csrf_token(self) -> str:
+        """GET корень панели — получает cookie сессии и csrf-token из HTML."""
+        session = await self._ensure_session()
+        url = _panel_url("/")
+        async with session.get(url) as resp:
+            html = await resp.text()
+        match = CSRF_TOKEN_RE.search(html)
+        if not match:
+            raise RuntimeError("3x-ui: не удалось найти csrf-token на странице логина")
+        return match.group(1)
+
     async def login(self) -> None:
+        self._csrf_token = await self._fetch_csrf_token()
         session = await self._ensure_session()
         url = _panel_url("/login")
+
         async with session.post(
             url,
             data={"username": XUI_USERNAME, "password": XUI_PASSWORD},
+            headers={"X-CSRF-Token": self._csrf_token},
         ) as resp:
             data = await resp.json(content_type=None)
-            if not data.get("success", False):
+            if not data or not data.get("success", False):
                 raise RuntimeError(f"3x-ui login failed: {data}")
             self._logged_in = True
             logging.info("3x-ui: успешный логин в панель")
 
     async def _request(self, method: str, path: str, **kwargs) -> dict:
-        """Делает запрос к API; при первой неудаче (например, протухшая сессия) логинится и повторяет один раз."""
+        """
+        Делает запрос к API. Для POST добавляет X-CSRF-Token.
+        При первой неудаче (протухшая сессия/токен) логинится заново и повторяет один раз.
+        """
         if not self._logged_in:
             await self.login()
 
         session = await self._ensure_session()
         url = _panel_url(path)
 
-        async with session.request(method, url, **kwargs) as resp:
-            try:
-                data = await resp.json(content_type=None)
-            except Exception:
-                text = await resp.text()
-                raise RuntimeError(f"3x-ui: не удалось распарсить ответ ({resp.status}): {text[:300]}")
+        headers = kwargs.pop("headers", {}) or {}
+        if method.upper() == "POST":
+            headers["X-CSRF-Token"] = self._csrf_token
 
-        if not data.get("success", False) and resp.status in (401, 403):
-            # Сессия протухла — логинимся заново и повторяем запрос один раз
+        async def _do_request():
+            async with session.request(method, url, headers=headers, **kwargs) as resp:
+                status = resp.status
+                try:
+                    body = await resp.json(content_type=None)
+                except Exception:
+                    body = None
+                return status, body
+
+        status, data = await _do_request()
+
+        if data is None or status in (401, 403):
+            # Сессия/csrf протухли — логинимся заново и повторяем запрос один раз
             self._logged_in = False
             await self.login()
-            session = await self._ensure_session()
-            async with session.request(method, url, **kwargs) as resp:
-                data = await resp.json(content_type=None)
+            headers["X-CSRF-Token"] = self._csrf_token
+            status, data = await _do_request()
+
+        if data is None:
+            raise RuntimeError(f"3x-ui: пустой/невалидный ответ от {path} (status={status})")
 
         return data
 
     async def get_inbound(self, inbound_id: int = XUI_INBOUND_ID) -> dict:
         """Возвращает детали inbound, включая распарсенные settings и streamSettings."""
+        import json as _json
+
         data = await self._request("GET", f"/panel/api/inbounds/get/{inbound_id}")
         if not data.get("success", False):
             raise RuntimeError(f"3x-ui get_inbound failed: {data}")
 
         obj = data["obj"]
-        # settings и streamSettings приходят как JSON-строки — распарсиваем для удобства
-        obj["settings_parsed"] = json.loads(obj["settings"])
-        obj["streamSettings_parsed"] = json.loads(obj["streamSettings"])
+        if isinstance(obj.get("settings"), str):
+            obj["settings_parsed"] = _json.loads(obj["settings"])
+        else:
+            obj["settings_parsed"] = obj.get("settings", {})
+        if isinstance(obj.get("streamSettings"), str):
+            obj["streamSettings_parsed"] = _json.loads(obj["streamSettings"])
+        else:
+            obj["streamSettings_parsed"] = obj.get("streamSettings", {})
         return obj
 
     async def add_client(
@@ -112,14 +151,13 @@ class XUIClient:
         user_id: int,
         days: int,
         inbound_id: int = XUI_INBOUND_ID,
-        flow: str = "xtls-rprx-vision",
     ) -> dict:
         """
-        Создаёт нового VLESS-клиента в указанном inbound.
-        Возвращает {"client_uuid": ..., "sub_id": ..., "email": ...}.
-        days=0 означает "без ограничения по времени" (expiryTime=0).
+        Создаёт нового клиента через новый Clients API.
+        UUID генерируется панелью автоматически (не передаём "id").
+        Возвращает {"sub_id": ..., "email": ...}.
+        days<=0 означает "без ограничения по времени" (expiryTime=0).
         """
-        client_uuid = str(uuid_lib.uuid4())
         sub_id = _gen_sub_id()
         email = f"tg{user_id}_{sub_id[:6]}"
 
@@ -128,57 +166,43 @@ class XUIClient:
             import time
             expiry_time_ms = int((time.time() + days * 86400) * 1000)
 
-        client_settings = {
-            "clients": [
-                {
-                    "id": client_uuid,
-                    "flow": flow,
-                    "email": email,
-                    "limitIp": 0,
-                    "totalGB": 0,
-                    "expiryTime": expiry_time_ms,
-                    "enable": True,
-                    "tgId": str(user_id),
-                    "subId": sub_id,
-                    "reset": 0,
-                }
-            ]
-        }
-
         payload = {
-            "id": inbound_id,
-            "settings": json.dumps(client_settings),
+            "client": {
+                "email": email,
+                "subId": sub_id,
+                "totalGB": 0,
+                "expiryTime": expiry_time_ms,
+                "tgId": user_id,
+                "limitIp": 0,
+                "enable": True,
+            },
+            "inboundIds": [inbound_id],
         }
 
-        data = await self._request(
-            "POST",
-            "/panel/api/inbounds/addClient",
-            json=payload,
-        )
-
+        data = await self._request("POST", "/panel/api/clients/add", json=payload)
         if not data.get("success", False):
             raise RuntimeError(f"3x-ui add_client failed: {data}")
 
-        logging.info(f"3x-ui: создан клиент {email} (uuid={client_uuid}) на {days} дн.")
-        return {"client_uuid": client_uuid, "sub_id": sub_id, "email": email}
+        logging.info(f"3x-ui: создан клиент {email} (subId={sub_id}) на {days} дн.")
+        return {"sub_id": sub_id, "email": email}
 
-    async def update_client_expiry(
-        self, client_uuid: str, days: int, inbound_id: int = XUI_INBOUND_ID, extend: bool = True
-    ) -> None:
+    async def get_client(self, email: str) -> dict | None:
+        """Возвращает клиента по email, либо None, если не найден."""
+        data = await self._request("GET", f"/panel/api/clients/get/{email}")
+        if not data.get("success", False):
+            return None
+        return data.get("obj")
+
+    async def update_client_expiry(self, email: str, days: int, extend: bool = True) -> None:
         """
-        Продлевает существующего клиента.
-        Если extend=True (по умолчанию) — добавляет days к текущему expiryTime клиента
-        (или к "сейчас", если клиент уже истёк/безлимитный). Это нужно, чтобы повторная
-        покупка не обрезала уже оплаченные, но ещё не использованные дни.
-        Если extend=False — жёстко устанавливает expiryTime = now + days (используется
-        редко, например при ручном сбросе администратором).
-        days=0 означает "сделать безлимитным" (expiryTime=0).
+        Продлевает существующего клиента (по email).
+        extend=True — добавляет days к текущему expiryTime (или к "сейчас", если клиент
+        истёк/был безлимитным) — так повторная покупка не обрезает уже оплаченные дни.
+        days<=0 — делает клиента безлимитным (expiryTime=0).
         """
-        inbound = await self.get_inbound(inbound_id)
-        clients = inbound["settings_parsed"]["clients"]
-        target = next((c for c in clients if c["id"] == client_uuid), None)
-        if target is None:
-            raise RuntimeError(f"3x-ui: клиент {client_uuid} не найден в inbound {inbound_id}")
+        current = await self.get_client(email)
+        if current is None:
+            raise RuntimeError(f"3x-ui: клиент с email {email} не найден")
 
         import time
         now_ms = int(time.time() * 1000)
@@ -186,77 +210,44 @@ class XUIClient:
         if days <= 0:
             expiry_time_ms = 0
         elif extend:
-            current_expiry = target.get("expiryTime", 0) or 0
-            # Если клиент уже истёк (current_expiry в прошлом) или был безлимитным (0),
-            # отталкиваемся от "сейчас", а не от прошлой/нулевой даты.
+            current_expiry = current.get("expiryTime", 0) or 0
             base_ms = current_expiry if current_expiry > now_ms else now_ms
             expiry_time_ms = base_ms + days * 86400 * 1000
         else:
             expiry_time_ms = now_ms + days * 86400 * 1000
 
-        target["expiryTime"] = expiry_time_ms
-        target["enable"] = True
+        current["expiryTime"] = expiry_time_ms
+        current["enable"] = True
 
-        payload = {
-            "id": inbound_id,
-            "settings": json.dumps({"clients": [target]}),
-        }
-
-        data = await self._request(
-            "POST",
-            f"/panel/api/inbounds/updateClient/{client_uuid}",
-            json=payload,
-        )
+        data = await self._request("POST", f"/panel/api/clients/update/{email}", json=current)
         if not data.get("success", False):
             raise RuntimeError(f"3x-ui update_client_expiry failed: {data}")
 
-        logging.info(f"3x-ui: клиент {client_uuid} продлён на {days} дн. (новый expiryTime={expiry_time_ms})")
+        logging.info(f"3x-ui: клиент {email} продлён на {days} дн. (новый expiryTime={expiry_time_ms})")
 
-    async def build_vless_link(self, sub_id: str, client_uuid: str, remark: str = "VPNchik24") -> str:
-        """
-        Собирает прямую vless://-ссылку на основе параметров inbound (Reality).
-        Используется как запасной вариант; основной способ для пользователя — subscription URL.
-        """
-        inbound = await self.get_inbound()
-        stream = inbound["streamSettings_parsed"]
-        reality = stream.get("realitySettings", {})
-        reality_settings = reality.get("settings", {})
+    async def delete_client(self, email: str) -> None:
+        """Удаляет клиента — например, при полном сбросе пользователя в админке."""
+        data = await self._request("POST", f"/panel/api/clients/del/{email}")
+        if not data.get("success", False):
+            logging.warning(f"3x-ui delete_client: {data}")
+        else:
+            logging.info(f"3x-ui: клиент {email} удалён")
 
-        public_key = reality_settings.get("publicKey", "")
-        short_ids = reality.get("shortIds", [""])
-        short_id = short_ids[0] if short_ids else ""
-        sni = reality.get("serverNames", [""])[0] if reality.get("serverNames") else ""
-        fingerprint = reality_settings.get("fingerprint", "chrome")
-
-        params = (
-            f"type=tcp&security=reality&pbk={public_key}&fp={fingerprint}"
-            f"&sni={sni}&sid={short_id}&spx=%2F&flow=xtls-rprx-vision"
-        )
-        return f"vless://{client_uuid}@{XUI_PUBLIC_HOST}:{XUI_PUBLIC_PORT}?{params}#{remark}"
+    async def get_sub_links(self, sub_id: str) -> list[str]:
+        """Возвращает список готовых протокольных ссылок (vless://...) для данного subId."""
+        data = await self._request("GET", f"/panel/api/clients/subLinks/{sub_id}")
+        if not data.get("success", False):
+            raise RuntimeError(f"3x-ui get_sub_links failed: {data}")
+        return data.get("obj") or []
 
     def build_subscription_url(self, sub_id: str) -> str:
         """
-        Subscription URL, который пользователь добавляет в Happ через "Добавить подписку".
+        Subscription URL для Happ через "Добавить подписку".
         Настроено в панели: Panel Settings -> Subscription:
-          - Subscription Service: включено
-          - URI Path: /sub/
-          - Listen Port: 2096 (внутренний, проксируется nginx-ом по /sub/ на 127.0.0.1:2096)
-          - Reverse Proxy URI: https://<домен>/sub/
+          URI Path: /sub/, Listen Port: 2096 (проксируется nginx-ом по /sub/ -> 127.0.0.1:2096),
+          Reverse Proxy URI: https://<домен>/sub/
         """
-        host = XUI_PUBLIC_HOST
-        return f"https://{host}/sub/{sub_id}"
-
-    async def delete_client(self, client_uuid: str, inbound_id: int = XUI_INBOUND_ID) -> None:
-        """Удаляет клиента из inbound — например, при полном сбросе пользователя в админке."""
-        data = await self._request(
-            "POST",
-            f"/panel/api/inbounds/{inbound_id}/delClient/{client_uuid}",
-        )
-        if not data.get("success", False):
-            # Не критично, если клиента уже нет (например, удалили руками в панели) — просто логируем
-            logging.warning(f"3x-ui delete_client: {data}")
-        else:
-            logging.info(f"3x-ui: клиент {client_uuid} удалён")
+        return f"https://{XUI_PUBLIC_HOST}/sub/{sub_id}"
 
     async def close(self) -> None:
         if self._session and not self._session.closed:
