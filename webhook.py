@@ -13,6 +13,7 @@ from aiohttp import web
 
 from config import PLATEGA_MERCHANT_ID, PLATEGA_API_KEY, PLATEGA_CALLBACK_PATH, WEBHOOK_PORT
 from database import db
+from xui_client import xui
 
 
 async def handle_platega_callback(request: web.Request) -> web.Response:
@@ -54,6 +55,19 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
         days = tx["days"]
         await db.activate_subscription(user_id, days)
         logging.info(f"Подписка пользователя {user_id} продлена на {days} дней (tx={transaction_id})")
+
+        # Создаём или продлеваем реального VPN-клиента в 3x-ui
+        try:
+            client_uuid, sub_id = await db.get_xui_client(user_id)
+            if client_uuid:
+                await xui.update_client_expiry(client_uuid, days, extend=True)
+            else:
+                result = await xui.add_client(user_id=user_id, days=days)
+                await db.save_xui_client(user_id, result["client_uuid"], result["sub_id"])
+        except Exception as e:
+            logging.error(f"Не удалось создать/продлить 3x-ui клиента для {user_id} (tx={transaction_id}): {e}")
+            # Подписка в нашей БД уже продлена — пользователь не останется без доступа полностью,
+            # но стоит проверить вручную через админку при возникновении такой ошибки в логах.
 
         # Уведомляем пользователя в Telegram об успешной оплате
         bot = request.app["bot"]
