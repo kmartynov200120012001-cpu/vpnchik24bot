@@ -78,32 +78,29 @@ class XUIClient:
         session = await self._ensure_session()
         url = _panel_url("/login")
 
-        async with session.get(url) as _:
-            pass
+    # прогрев cookie (обязательно)
+        await session.get(url)
 
         async with session.post(
             url,
-            data={
+            json={
                 "username": XUI_USERNAME,
                 "password": XUI_PASSWORD,
             },
+            cookies=session.cookie_jar,
             allow_redirects=True,
         ) as resp:
 
             text = await resp.text()
 
-            logging.error("========== 3X-UI LOGIN ==========")
-            logging.error(f"URL: {url}")
-            logging.error(f"STATUS: {resp.status}")
-            logging.error(f"BODY: {text}")
-            logging.error(f"COOKIES: {session.cookie_jar.filter_cookies(url)}")
-            logging.error("================================")
+            logging.error("STATUS: %s", resp.status)
+            logging.error("BODY: %s", text)
 
             if resp.status in (200, 302):
                 self._logged_in = True
                 return
 
-            raise RuntimeError(f"3x-ui login failed: HTTP {resp.status}")
+            raise RuntimeError(f"login failed: {resp.status}")
 
     async def _request(self, method: str, path: str, **kwargs) -> dict:
         """
@@ -269,5 +266,7 @@ class XUIClient:
         if self._session and not self._session.closed:
             await self._session.close()
 
+
+xui = XUIClient()
 
 xui = XUIClient()
