@@ -33,6 +33,8 @@ class Database:
                 "subscription_ends_at TIMESTAMP",
                 "referrer_id INTEGER",
                 "is_trial BOOLEAN DEFAULT 0",
+                "xui_client_uuid TEXT",
+                "xui_sub_id TEXT",
             ]:
                 try:
                     await db.execute(f"ALTER TABLE users ADD COLUMN {column}")
@@ -102,6 +104,24 @@ class Database:
             row = await cursor.fetchone()
             return row[0] if row and row[0] else None
 
+    async def save_xui_client(self, user_id: int, client_uuid: str, sub_id: str) -> None:
+        """Привязывает 3x-ui клиента (uuid + subId) к пользователю — один на все платформы."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE users SET xui_client_uuid = ?, xui_sub_id = ? WHERE user_id = ?",
+                (client_uuid, sub_id, user_id),
+            )
+            await db.commit()
+
+    async def get_xui_client(self, user_id: int) -> tuple[str | None, str | None]:
+        """Возвращает (client_uuid, sub_id) для пользователя, либо (None, None) если ещё не создан."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT xui_client_uuid, xui_sub_id FROM users WHERE user_id = ?", (user_id,)
+            )
+            row = await cursor.fetchone()
+            return (row[0], row[1]) if row else (None, None)
+
     async def activate_trial(self, user_id: int) -> None:
         """Активирует бесплатный период: trial_used=1, is_trial=1."""
         ends_at = datetime.now() + timedelta(days=FREE_TRIAL_DAYS)
@@ -142,19 +162,24 @@ class Database:
             )
             await db.commit()
 
-    async def reset_user(self, user_id: int) -> bool:
+    async def reset_user(self, user_id: int) -> tuple[bool, str | None]:
         """
         Полностью удаляет пользователя и связанные с ним транзакции из БД,
         как если бы он никогда не запускал бота. Следующий /start создаст
         запись заново со значениями по умолчанию (trial_used=0, is_trial=0 и т.д.).
         Используется в админке для тестирования сценария "новый пользователь"
         без удаления всей базы bot.db.
+
+        Возвращает (was_deleted, xui_client_uuid). xui_client_uuid отдаётся вызывающему
+        коду, чтобы он мог дополнительно удалить клиента и в самой панели 3x-ui —
+        здесь это не делается, чтобы database.py не зависел от xui_client.py.
         """
+        client_uuid, _ = await self.get_xui_client(user_id)
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
             await db.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
             await db.commit()
-            return cursor.rowcount > 0
+            return cursor.rowcount > 0, client_uuid
 
     # ==================== РЕФЕРАЛЫ ====================
 
