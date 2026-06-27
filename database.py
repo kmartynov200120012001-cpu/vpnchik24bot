@@ -33,7 +33,7 @@ class Database:
                 "subscription_ends_at TIMESTAMP",
                 "referrer_id INTEGER",
                 "is_trial BOOLEAN DEFAULT 0",
-                "xui_client_uuid TEXT",
+                "xui_email TEXT",
                 "xui_sub_id TEXT",
             ]:
                 try:
@@ -104,20 +104,20 @@ class Database:
             row = await cursor.fetchone()
             return row[0] if row and row[0] else None
 
-    async def save_xui_client(self, user_id: int, client_uuid: str, sub_id: str) -> None:
-        """Привязывает 3x-ui клиента (uuid + subId) к пользователю — один на все платформы."""
+    async def save_xui_client(self, user_id: int, email: str, sub_id: str) -> None:
+        """Привязывает 3x-ui клиента (email + subId) к пользователю — один на все платформы."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
-                "UPDATE users SET xui_client_uuid = ?, xui_sub_id = ? WHERE user_id = ?",
-                (client_uuid, sub_id, user_id),
+                "UPDATE users SET xui_email = ?, xui_sub_id = ? WHERE user_id = ?",
+                (email, sub_id, user_id),
             )
             await db.commit()
 
     async def get_xui_client(self, user_id: int) -> tuple[str | None, str | None]:
-        """Возвращает (client_uuid, sub_id) для пользователя, либо (None, None) если ещё не создан."""
+        """Возвращает (email, sub_id) для пользователя, либо (None, None) если ещё не создан."""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
-                "SELECT xui_client_uuid, xui_sub_id FROM users WHERE user_id = ?", (user_id,)
+                "SELECT xui_email, xui_sub_id FROM users WHERE user_id = ?", (user_id,)
             )
             row = await cursor.fetchone()
             return (row[0], row[1]) if row else (None, None)
@@ -170,16 +170,16 @@ class Database:
         Используется в админке для тестирования сценария "новый пользователь"
         без удаления всей базы bot.db.
 
-        Возвращает (was_deleted, xui_client_uuid). xui_client_uuid отдаётся вызывающему
+        Возвращает (was_deleted, xui_email). xui_email отдаётся вызывающему
         коду, чтобы он мог дополнительно удалить клиента и в самой панели 3x-ui —
         здесь это не делается, чтобы database.py не зависел от xui_client.py.
         """
-        client_uuid, _ = await self.get_xui_client(user_id)
+        email, _ = await self.get_xui_client(user_id)
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
             await db.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
             await db.commit()
-            return cursor.rowcount > 0, client_uuid
+            return cursor.rowcount > 0, email
 
     # ==================== РЕФЕРАЛЫ ====================
 
