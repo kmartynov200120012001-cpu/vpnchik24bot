@@ -79,13 +79,26 @@ class XUIClient:
         url = _panel_url("/login")
 
         async with session.post(
-            url,
-            data={"username": XUI_USERNAME, "password": XUI_PASSWORD},
-            headers={"X-CSRF-Token": self._csrf_token},
-        ) as resp:
-            data = await resp.json(content_type=None)
-            if not data or not data.get("success", False):
-                raise RuntimeError(f"3x-ui login failed: {data}")
+    url,
+    data={"username": XUI_USERNAME, "password": XUI_PASSWORD},
+    headers={"X-CSRF-Token": self._csrf_token},
+    allow_redirects=False,
+) as resp:
+
+    text = await resp.text()
+
+    logging.error(f"LOGIN STATUS = {resp.status}")
+    logging.error(f"LOGIN HEADERS = {dict(resp.headers)}")
+    logging.error(f"LOGIN BODY = {text}")
+    logging.error(f"COOKIES = {session.cookie_jar.filter_cookies(url)}")
+
+    try:
+        data = await resp.json(content_type=None)
+    except Exception:
+        data = None
+
+    if not data or not data.get("success", False):
+        raise RuntimeError(f"3x-ui login failed: {data}")
             self._logged_in = True
             logging.info("3x-ui: успешный логин в панель")
 
