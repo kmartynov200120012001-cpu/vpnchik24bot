@@ -12,6 +12,7 @@ from aiogram.exceptions import TelegramForbiddenError
 
 from config import ADMIN_ID
 from database import db
+from xui_client import xui
 
 logger = logging.getLogger(__name__)
 
@@ -509,11 +510,17 @@ async def on_admin_reset_self_confirmed(callback: CallbackQuery):
         return
 
     user_id = callback.from_user.id
-    await db.reset_user(user_id)
+    _, client_uuid = await db.reset_user(user_id)
+
+    if client_uuid:
+        try:
+            await xui.delete_client(client_uuid)
+        except Exception as e:
+            logging.error(f"Не удалось удалить 3x-ui клиента {client_uuid} при сбросе {user_id}: {e}")
 
     await callback.message.edit_text(
         "✅ <b>Готово!</b>\n\n"
-        "Ваша запись удалена из базы. Отправьте команду /start, "
+        "Ваша запись удалена из базы (включая VPN-ключ). Отправьте команду /start, "
         "чтобы пройти онбординг как новый пользователь.",
         parse_mode="HTML",
     )
