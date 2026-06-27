@@ -36,8 +36,12 @@ CSRF_TOKEN_RE = re.compile(r'<meta name="csrf-token" content="([^"]+)"')
 
 
 def _panel_url(path: str) -> str:
+    """Склеивает базовый URL панели + webBasePath + путь API."""
     base = XUI_BASE_URL.rstrip("/")
+    web_base = XUI_WEB_BASE_PATH.strip("/")
     path = path.lstrip("/")
+    if web_base:
+        return f"{base}/{web_base}/{path}"
     return f"{base}/{path}"
 
 
@@ -59,48 +63,31 @@ class XUIClient:
         return self._session
 
     async def _fetch_csrf_token(self) -> str:
+        """GET корень панели — получает cookie сессии и csrf-token из HTML."""
         session = await self._ensure_session()
-        url = _panel_url("/login")
-
+        url = _panel_url("/")
         async with session.get(url) as resp:
-            # просто прогреваем cookies
-            pass
-
-        cookies = session.cookie_jar.filter_cookies(url)
-
-        xsrf = cookies.get("XSRF-TOKEN")
-        if not xsrf:
-            raise RuntimeError("3x-ui: CSRF token не найден в cookies")
-
-        return xsrf.value
+            html = await resp.text()
+        match = CSRF_TOKEN_RE.search(html)
+        if not match:
+            raise RuntimeError("3x-ui: не удалось найти csrf-token на странице логина")
+        return match.group(1)
 
     async def login(self) -> None:
+        self._csrf_token = await self._fetch_csrf_token()
         session = await self._ensure_session()
         url = _panel_url("/login")
-
-    # прогрев cookie (обязательно)
-        await session.get(url)
 
         async with session.post(
             url,
-            json={
-                "username": XUI_USERNAME,
-                "password": XUI_PASSWORD,
-            },
-            cookies=session.cookie_jar,
-            allow_redirects=True,
+            data={"username": XUI_USERNAME, "password": XUI_PASSWORD},
+            headers={"X-CSRF-Token": self._csrf_token},
         ) as resp:
-
-            text = await resp.text()
-
-            logging.error("STATUS: %s", resp.status)
-            logging.error("BODY: %s", text)
-
-            if resp.status in (200, 302):
-                self._logged_in = True
-                return
-
-            raise RuntimeError(f"login failed: {resp.status}")
+            data = await resp.json(content_type=None)
+            if not data or not data.get("success", False):
+                raise RuntimeError(f"3x-ui login failed: {data}")
+            self._logged_in = True
+            logging.info("3x-ui: успешный логин в панель")
 
     async def _request(self, method: str, path: str, **kwargs) -> dict:
         """
@@ -266,7 +253,5 @@ class XUIClient:
         if self._session and not self._session.closed:
             await self._session.close()
 
-
-xui = XUIClient()
 
 xui = XUIClient()
