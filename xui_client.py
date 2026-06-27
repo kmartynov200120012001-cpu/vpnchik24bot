@@ -59,7 +59,12 @@ class XUIClient:
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            # unsafe=True обязателен: по умолчанию aiohttp (следуя RFC 2109) не сохраняет
+            # cookies для URL с IP-адресом вместо DNS-имени (например, http://127.0.0.1:1221).
+            # Без этого панель логинит успешно, но cookie сессии теряется, и все
+            # последующие запросы (включая повторный /login) проваливаются с 403.
+            jar = aiohttp.CookieJar(unsafe=True)
+            self._session = aiohttp.ClientSession(cookie_jar=jar)
         return self._session
 
     async def _fetch_csrf_token(self) -> str:
