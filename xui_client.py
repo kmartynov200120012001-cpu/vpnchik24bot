@@ -61,7 +61,7 @@ class XUIClient:
     async def _fetch_csrf_token(self) -> str:
         """GET корень панели — получает cookie сессии и csrf-token из HTML."""
         session = await self._ensure_session()
-        url = _panel_url("/")
+        url = _panel_url("/login")
         async with session.get(url) as resp:
             html = await resp.text()
         match = CSRF_TOKEN_RE.search(html)
@@ -70,17 +70,18 @@ class XUIClient:
         return match.group(1)
 
     async def login(self) -> None:
-        self._csrf_token = await self._fetch_csrf_token()
         session = await self._ensure_session()
+        self._csrf_token = await self._fetch_csrf_token()
         url = _panel_url("/login")
 
         async with session.post(
             url,
-            data={
+            json={
                 "username": XUI_USERNAME,
                 "password": XUI_PASSWORD,
             },
             headers={
+                "Content-Type": "application/json",
                 "X-CSRF-Token": self._csrf_token,
             },
             allow_redirects=False,
