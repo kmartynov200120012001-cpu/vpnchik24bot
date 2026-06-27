@@ -351,6 +351,18 @@ async def on_sub_extend(callback: CallbackQuery):
 
     await db.activate_subscription(user_id, days)
 
+    # Продлеваем/создаём реального VPN-клиента в 3x-ui — иначе дни добавятся
+    # только в нашей БД, а в панели и Happ срок останется прежним.
+    try:
+        email, sub_id = await db.get_xui_client(user_id)
+        if email:
+            await xui.update_client_expiry(email, days, extend=True)
+        else:
+            result = await xui.add_client(user_id=user_id, days=days)
+            await db.save_xui_client(user_id, result["email"], result["sub_id"])
+    except Exception as e:
+        logging.error(f"Не удалось продлить 3x-ui клиента для {user_id} (admin extend): {e}")
+
     user = await db.get_user(user_id)
     ends_at_str = user.get("subscription_ends_at")
     ends_formatted = ""
@@ -423,6 +435,18 @@ async def on_sub_custom_days(message: Message, state: FSMContext):
         return
 
     await db.activate_subscription(user_id, days)
+
+    # Продлеваем/создаём реального VPN-клиента в 3x-ui
+    try:
+        email, sub_id = await db.get_xui_client(user_id)
+        if email:
+            await xui.update_client_expiry(email, days, extend=True)
+        else:
+            result = await xui.add_client(user_id=user_id, days=days)
+            await db.save_xui_client(user_id, result["email"], result["sub_id"])
+    except Exception as e:
+        logging.error(f"Не удалось продлить 3x-ui клиента для {user_id} (admin custom days): {e}")
+
     await state.clear()
 
     user = await db.get_user(user_id)
