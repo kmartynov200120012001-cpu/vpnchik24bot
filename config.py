@@ -30,8 +30,21 @@ TARIFFS = [
     {"name": "1 день",    "months": 0,  "days": 1,   "price": 11,   "callback": "tariff_1d"},
 ]
 
-# --- PLATEGA (платёжная система) ---
+# --- 3X-UI (панель управления VPN) ---
 # Все значения берутся из переменных окружения на сервере — никогда не храните их в коде.
+# XUI_BASE_URL — корневой адрес панели БЕЗ webBasePath, например "http://127.0.0.1:1221"
+# (так как бот работает на том же сервере, обращаемся через localhost, не через внешний IP)
+XUI_BASE_URL = os.environ.get("XUI_BASE_URL", "http://127.0.0.1:1221")
+XUI_WEB_BASE_PATH = os.environ.get("XUI_WEB_BASE_PATH", "")  # например "/cLKcauTRI6nq259pPt"
+XUI_USERNAME = os.environ.get("XUI_USERNAME")
+XUI_PASSWORD = os.environ.get("XUI_PASSWORD")
+XUI_INBOUND_ID = int(os.environ.get("XUI_INBOUND_ID", "2"))
+
+# Публичный домен/IP и порт, на котором реально слушает Xray (inbound) —
+# это то, что попадёт в ссылку-конфиг для клиента. Не путать с XUI_BASE_URL (это для админки).
+XUI_PUBLIC_HOST = os.environ.get("XUI_PUBLIC_HOST", "virtualpullnightchik24.ru")
+XUI_PUBLIC_PORT = int(os.environ.get("XUI_PUBLIC_PORT", "8443"))
+# --- PLATEGA (платёжная система) ---
 PLATEGA_BASE_URL = "https://app.platega.io"
 PLATEGA_MERCHANT_ID = os.environ.get("PLATEGA_MERCHANT_ID")
 PLATEGA_API_KEY = os.environ.get("PLATEGA_API_KEY")
