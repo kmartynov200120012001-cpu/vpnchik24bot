@@ -26,6 +26,7 @@ from database import db
 from admin import admin_router
 from payments import create_payment
 from webhook import run_webhook_server
+from xui_client import xui
 
 # --- Логирование ---
 logging.basicConfig(
@@ -238,9 +239,14 @@ def get_welcome_text(name: str) -> str:
 def get_paid_profile_text(user: dict) -> str:
     """Текст профиля для активной платной подписки (2 варианта)."""
     ends_at_str = user.get("subscription_ends_at")
-    
-    # Плейсхолдер для ключа (в реальности должен браться из БД или генерироваться)
-    key_link = "https://example.com/placeholder_key_paid"
+
+    sub_id = user.get("xui_sub_id")
+    if sub_id:
+        key_link = xui.build_subscription_url(sub_id)
+    else:
+        # У пользователя ещё нет VPN-клиента (не проходил настройку устройства) —
+        # отправляем в шаг выбора устройства, где ключ создастся автоматически.
+        key_link = "Ключ ещё не создан — выберите устройство в разделе «Подключиться»"
 
     if not ends_at_str:
         return get_profile_text(user) # Fallback
@@ -642,6 +648,32 @@ async def on_connect_vpn(callback: CallbackQuery):
     await callback.answer()
 
 
+async def get_or_create_subscription_link(user_id: int) -> str:
+    """
+    Возвращает subscription URL для пользователя.
+    Если у пользователя уже есть VPN-клиент в 3x-ui (он проходил настройку на другой
+    платформе или продлевал подписку) — просто возвращает существующую ссылку.
+    Иначе создаёт нового клиента на FREE_TRIAL_DAYS дней (триал) и сохраняет в БД.
+
+    Срок действия клиента в 3x-ui синхронизируется отдельно при оплате (см. webhook.py),
+    эта функция отвечает только за выдачу ссылки и первичное создание клиента.
+    """
+    client_uuid, sub_id = await db.get_xui_client(user_id)
+
+    if client_uuid and sub_id:
+        return xui.build_subscription_url(sub_id)
+
+    # Клиента ещё нет — создаём с пробным сроком
+    try:
+        result = await xui.add_client(user_id=user_id, days=FREE_TRIAL_DAYS)
+    except Exception as e:
+        logging.error(f"Не удалось создать 3x-ui клиента для {user_id}: {e}")
+        return "⚠️ Не удалось сгенерировать ключ. Попробуйте позже или напишите в поддержку."
+
+    await db.save_xui_client(user_id, result["client_uuid"], result["sub_id"])
+    return xui.build_subscription_url(result["sub_id"])
+
+
 # --- ANDROID ---
 ANDROID_STEP2_TEXT = (
     "Установка подписки. 🏁 <b>Шаг 2 из 3</b>\n\nСкачайте и установите приложение для VPN-подключения ⤵️\n\n"
@@ -669,8 +701,8 @@ async def on_android_step3(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
     if not user_data.get("trial_used", 0):
         await db.activate_trial(cb.from_user.id)
-    
-    key = "https://example.com/placeholder_key_android"
+
+    key = await get_or_create_subscription_link(cb.from_user.id)
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
         "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
@@ -712,8 +744,8 @@ async def on_ios_step3(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
     if not user_data.get("trial_used", 0):
         await db.activate_trial(cb.from_user.id)
-    
-    key = "https://example.com/placeholder_key_ios"
+
+    key = await get_or_create_subscription_link(cb.from_user.id)
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
         "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
@@ -753,8 +785,8 @@ async def on_windows_step3(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
     if not user_data.get("trial_used", 0):
         await db.activate_trial(cb.from_user.id)
-    
-    key = "https://example.com/placeholder_key_windows"
+
+    key = await get_or_create_subscription_link(cb.from_user.id)
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
         "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
@@ -796,8 +828,8 @@ async def on_macos_step3(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
     if not user_data.get("trial_used", 0):
         await db.activate_trial(cb.from_user.id)
-    
-    key = "https://example.com/placeholder_key_macos"
+
+    key = await get_or_create_subscription_link(cb.from_user.id)
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
         "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
