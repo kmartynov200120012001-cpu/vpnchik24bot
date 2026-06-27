@@ -510,13 +510,13 @@ async def on_admin_reset_self_confirmed(callback: CallbackQuery):
         return
 
     user_id = callback.from_user.id
-    _, client_uuid = await db.reset_user(user_id)
+    _, xui_email = await db.reset_user(user_id)
 
-    if client_uuid:
+    if xui_email:
         try:
-            await xui.delete_client(client_uuid)
+            await xui.delete_client(xui_email)
         except Exception as e:
-            logging.error(f"Не удалось удалить 3x-ui клиента {client_uuid} при сбросе {user_id}: {e}")
+            logging.error(f"Не удалось удалить 3x-ui клиента {xui_email} при сбросе {user_id}: {e}")
 
     await callback.message.edit_text(
         "✅ <b>Готово!</b>\n\n"
