@@ -59,16 +59,17 @@ class XUIClient:
         return self._session
 
     async def _fetch_csrf_token(self) -> str:
-        """GET корень панели — получает cookie сессии и csrf-token из HTML."""
         session = await self._ensure_session()
         url = _panel_url("/login")
         async with session.get(url) as resp:
-            html = await resp.text()
-        match = CSRF_TOKEN_RE.search(html)
-        if not match:
-            raise RuntimeError("3x-ui: не удалось найти csrf-token на странице логина")
-        return match.group(1)
-
+            # просто прогреваем cookies
+            pass
+        cookies = session.cookie_jar.filter_cookies(url)
+        xsrf = cookies.get("XSRF-TOKEN")
+        if not xsrf:
+            raise RuntimeError("3x-ui: CSRF token не найден в cookies")
+        return xsrf.value
+      
     async def login(self) -> None:
         session = await self._ensure_session()
         self._csrf_token = await self._fetch_csrf_token()
