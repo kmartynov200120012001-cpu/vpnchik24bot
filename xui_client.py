@@ -77,29 +77,32 @@ class XUIClient:
     async def login(self) -> None:
         session = await self._ensure_session()
         url = _panel_url("/login")
-        # важно: сначала GET (прогрев cookie)
+
         async with session.get(url) as _:
             pass
+
         async with session.post(
             url,
-            json={
+            data={
                 "username": XUI_USERNAME,
                 "password": XUI_PASSWORD,
             },
             allow_redirects=True,
         ) as resp:
+
             text = await resp.text()
+
             logging.error("========== 3X-UI LOGIN ==========")
             logging.error(f"URL: {url}")
             logging.error(f"STATUS: {resp.status}")
             logging.error(f"BODY: {text}")
             logging.error(f"COOKIES: {session.cookie_jar.filter_cookies(url)}")
             logging.error("================================")
-            # В SPA часто SUCCESS = redirect, а не JSON
+
             if resp.status in (200, 302):
                 self._logged_in = True
-                logging.info("3x-ui: успешный логин в панель")
                 return
+
             raise RuntimeError(f"3x-ui login failed: HTTP {resp.status}")
 
     async def _request(self, method: str, path: str, **kwargs) -> dict:
