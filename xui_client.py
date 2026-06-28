@@ -308,11 +308,13 @@ class XUIClient:
     def build_subscription_url(self, sub_id: str) -> str:
         """
         Subscription URL для Happ через "Добавить подписку".
-        Настроено в панели: Panel Settings -> Subscription:
-          URI Path: /sub/, Listen Port: 2096 (проксируется nginx-ом по /sub/ -> 127.0.0.1:2096),
-          Reverse Proxy URI: https://<домен>/sub/
+        Используется JSON-эндпоинт (а не обычный /sub/) — он отдаёт дополнительные
+        мета-поля (Profile-Title, Support-Url, Routing и т.д.), которые показывает Happ.
+        Настроено в панели: Panel Settings -> General -> JSON subscription:
+          URI Path: /json/, Listen Port: 2096 (тот же sub-сервис, проксируется nginx-ом
+          по /json/ -> 127.0.0.1:2096), JSON Reverse Proxy URI: https://<домен>/json/
         """
-        return f"https://{XUI_PUBLIC_HOST}/sub/{sub_id}"
+        return f"https://{XUI_PUBLIC_HOST}/json/{sub_id}"
 
     async def close(self) -> None:
         if self._session and not self._session.closed:
