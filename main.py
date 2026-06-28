@@ -387,7 +387,8 @@ def get_keyboard_for_user(user: dict) -> InlineKeyboardMarkup:
     code, _, _ = get_subscription_status(user)
     if code == "trial_active":
         # Для триала всегда динамическая клавиатура
-        key_link = "https://example.com/placeholder_key_trial"
+        sub_id = user.get("xui_sub_id")
+        key_link = xui.build_subscription_url(sub_id) if sub_id else "⚠️ Ключ ещё не создан"
         return get_trial_dynamic_keyboard(key_link)
     elif code == "active":
         return get_main_keyboard_after_activation()
@@ -418,7 +419,8 @@ async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bo
         if is_activation:
             await bot.send_animation(chat_id=chat_id, animation=FSInputFile(CONGRATS_GIF_PATH))
 
-        key_link = "https://example.com/placeholder_key_trial"
+        sub_id = user_data.get("xui_sub_id")
+        key_link = xui.build_subscription_url(sub_id) if sub_id else "⚠️ Ключ ещё не создан"
         sent = await bot.send_message(
             chat_id=chat_id,
             text=get_trial_welcome_text(user_data, key_link),
