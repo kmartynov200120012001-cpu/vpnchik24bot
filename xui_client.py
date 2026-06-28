@@ -228,36 +228,51 @@ class XUIClient:
         return obj.get("client")
 
     async def update_client_expiry(self, email: str, days: int, extend: bool = True) -> None:
-        """
-        Продлевает существующего клиента (по email).
-        extend=True — добавляет days к текущему expiryTime (или к "сейчас", если клиент
-        истёк/был безлимитным) — так повторная покупка не обрезает уже оплаченные дни.
-        days<=0 — делает клиента безлимитным (expiryTime=0).
-        """
-        current = await self.get_client(email)
-        if current is None:
-            raise RuntimeError(f"3x-ui: клиент с email {email} не найден")
+      """
+      Продлевает существующего клиента (по email).
+      extend=True — добавляет days к текущему expiryTime.
+      days<=0 — делает клиента безлимитным (expiryTime=0).
+      """
+      current = await self.get_client(email)
+      if current is None:
+          raise RuntimeError(f"3x-ui: клиент с email {email} не найден")
 
-        import time
-        now_ms = int(time.time() * 1000)
+      import time
+      import copy
 
-        if days <= 0:
-            expiry_time_ms = 0
-        elif extend:
-            current_expiry = current.get("expiryTime", 0) or 0
-            base_ms = current_expiry if current_expiry > now_ms else now_ms
-            expiry_time_ms = base_ms + days * 86400 * 1000
-        else:
-            expiry_time_ms = now_ms + days * 86400 * 1000
+      now_ms = int(time.time() * 1000)
 
-        current["expiryTime"] = expiry_time_ms
-        current["enable"] = True
+      if days <= 0:
+          expiry_time_ms = 0
+      elif extend:
+          current_expiry = current.get("expiryTime", 0) or 0
+          base_ms = current_expiry if current_expiry > now_ms else now_ms
+          expiry_time_ms = base_ms + days * 86400 * 1000
+      else:
+          expiry_time_ms = now_ms + days * 86400 * 1000
 
-        data = await self._request("POST", f"/panel/api/clients/update/{email}", json=current)
-        if not data.get("success", False):
-            raise RuntimeError(f"3x-ui update_client_expiry failed: {data}")
+      # ВАЖНО: делаем чистый payload, убираем конфликтующие поля
+      payload = copy.deepcopy(current)
 
-        logging.info(f"3x-ui: клиент {email} продлён на {days} дн. (новый expiryTime={expiry_time_ms})")
+      # критическая фиксация ошибки Go unmarshal
+      payload.pop("id", None)          # <-- это и вызывало crash
+      payload.pop("_id", None)         # на всякий случай (некоторые версии)
+    
+      payload["expiryTime"] = expiry_time_ms
+      payload["enable"] = True
+
+      data = await self._request(
+          "POST",
+          f"/panel/api/clients/update/{email}",
+          json=payload
+      )
+
+      if not data.get("success", False):
+          raise RuntimeError(f"3x-ui update_client_expiry failed: {data}")
+
+      logging.info(
+          f"3x-ui: клиент {email} продлён на {days} дн. (expiryTime={expiry_time_ms})"
+      )
 
     async def set_client_flow(self, email: str, flow: str = "xtls-rprx-vision") -> None:
         """
