@@ -708,7 +708,7 @@ async def on_android_step3(cb: CallbackQuery):
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
         "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
-        f"Ваш ключ-ссылка:\n<code>{key}</code>"
+        f"Ваш ключ-ссылка:\n<blockquote><code>{key}</code></blockquote>"
     )
     await cb.message.edit_text(text, reply_markup=_step3_kb(key, "android_done", "android_step2"), parse_mode="HTML")
     await cb.answer()
@@ -751,7 +751,7 @@ async def on_ios_step3(cb: CallbackQuery):
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
         "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
-        f"Ваш ключ-ссылка:\n<code>{key}</code>"
+        f"Ваш ключ-ссылка:\n<blockquote><code>{key}</code></blockquote>"
     )
     await cb.message.edit_text(text, reply_markup=_step3_kb(key, "ios_done", "ios_step2"), parse_mode="HTML")
     await cb.answer()
@@ -792,7 +792,7 @@ async def on_windows_step3(cb: CallbackQuery):
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
         "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
-        f"Ваш ключ-ссылка:\n<code>{key}</code>"
+        f"Ваш ключ-ссылка:\n<blockquote><code>{key}</code></blockquote>"
     )
     await cb.message.edit_text(text, reply_markup=_step3_kb(key, "windows_done", "windows_step2"), parse_mode="HTML")
     await cb.answer()
@@ -835,7 +835,7 @@ async def on_macos_step3(cb: CallbackQuery):
     text = (
         "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
         "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
-        f"Ваш ключ-ссылка:\n<code>{key}</code>"
+        f"Ваш ключ-ссылка:\n<blockquote><code>{key}</code></blockquote>"
     )
     await cb.message.edit_text(text, reply_markup=_step3_kb(key, "macos_done", "macos_step2"), parse_mode="HTML")
     await cb.answer()
