@@ -614,7 +614,7 @@ async def on_connect_vpn(callback: CallbackQuery):
         await db.save_menu_message_id(callback.from_user.id, sent.message_id)
     else:
         await callback.message.edit_text(
-            "🏁 <b>Выберите своё устройство</b> ⤵️",
+            "<b>Выберите ваше устройство:</b>",
             reply_markup=get_device_keyboard(), parse_mode="HTML",
         )
     await callback.answer()
@@ -633,13 +633,13 @@ async def on_connect_android(cb: CallbackQuery):
         f"<b>Инструкция для Android</b>\n\n"
         f"1️⃣ Нажмите на ссылку, чтобы скопировать вашу подписку:\n"
         f"<blockquote><code>{key}</code></blockquote>\n\n"
-        f"2️⃣ Установите приложение Happ из"
+        f"2️⃣ Установите приложение Happ из "
         f'<a href="https://play.google.com/store/apps/details?id=com.happproxy"><b>Google Play</b></a>'
         f" или "
         f'<a href="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk"><b>скачайте APK</b></a>'
         f"\n\n"
-        f"3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\".\n\n"
-        f"4️⃣ Включите VPN"
+        f"3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\"\n\n"
+        f"4️⃣ Включите VPN."
     )
 
     await cb.message.edit_text(text, reply_markup=_android_instruction_kb(), parse_mode="HTML")
@@ -661,8 +661,8 @@ async def on_connect_ios(cb: CallbackQuery):
         f"<blockquote><code>{key}</code></blockquote>\n\n"
         f"2️⃣ Установите приложение INCY из App Store:\n"
         f'<a href="https://apps.apple.com/ru/app/incy/id6756943388">Скачать INCY</a>\n\n'
-        f"3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\".\n\n"
-        f"4️⃣ Включите VPN"
+        f"3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\"\n\n"
+        f"4️⃣ Включите VPN."
     )
 
     await cb.message.edit_text(text, reply_markup=_ios_instruction_kb(), parse_mode="HTML")
