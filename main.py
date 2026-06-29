@@ -643,7 +643,7 @@ async def on_connect_android(cb: CallbackQuery):
         f"4️⃣ Включите VPN"
     )
 
-    await cb.message.edit_text(text, reply_markup=_android_instruction_kb(), parse_mode="HTML")
+    await cb.message.edit_text(text, reply_markup=_android_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
     await cb.answer()
 
 
@@ -690,7 +690,7 @@ async def on_connect_windows(cb: CallbackQuery):
         f"<b>4️⃣ Включите VPN</b>"
     )
 
-    await cb.message.edit_text(text, reply_markup=_windows_instruction_kb(), parse_mode="HTML")
+    await cb.message.edit_text(text, reply_markup=_windows_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
     await cb.answer()
 
 
@@ -713,7 +713,7 @@ async def on_connect_macos(cb: CallbackQuery):
         f"<b>4️⃣ Включите VPN</b>"
     )
 
-    await cb.message.edit_text(text, reply_markup=_macos_instruction_kb(), parse_mode="HTML")
+    await cb.message.edit_text(text, reply_markup=_macos_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
     await cb.answer()
 
 
