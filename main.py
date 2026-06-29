@@ -661,7 +661,7 @@ async def on_connect_ios(cb: CallbackQuery):
         f"<blockquote><code>{key}</code></blockquote>\n\n"
         f"2️⃣ Установите приложение <b>INCY</b> из "
         f'<a href="https://apps.apple.com/ru/app/incy/id6756943388"><b>App Store</b></a>'
-        f"\n\n'
+        f"\n\n"
         f"3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\"\n\n"
         f"4️⃣ Включите VPN."
     )
