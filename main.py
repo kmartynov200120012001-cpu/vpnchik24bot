@@ -174,23 +174,31 @@ def _ios_instruction_kb() -> InlineKeyboardMarkup:
     ])
 
 
-# Старые клавиатуры для остальных платформ (Windows, macOS)
-def _step2_kb(url: str, next_cb: str) -> InlineKeyboardMarkup:
+# Клавиатура для инструкции Windows
+def _windows_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌐 Скачать приложение", url=url)],
-        [InlineKeyboardButton(text="✅ Сделано", callback_data=next_cb)],
-        [InlineKeyboardButton(text="← Назад", callback_data="connect_vpn")],
+        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done", style="success")],
+        [InlineKeyboardButton(text="🆘 Нужна помощь", callback_data="support")],
+        [
+            InlineKeyboardButton(text="← Назад", callback_data="connect_vpn"),
+            InlineKeyboardButton(text="⮎ Главное меню", callback_data="back_to_menu"),
+        ],
     ])
 
 
-def _step3_kb(key_link: str, done_cb: str, back_cb: str) -> InlineKeyboardMarkup:
+# Клавиатура для инструкции macOS
+def _macos_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📌 Копировать ключ-ссылку", copy_text=CopyTextButton(text=key_link))],
-        [InlineKeyboardButton(text="✅ Сделано", callback_data=done_cb)],
-        [InlineKeyboardButton(text="← Назад", callback_data=back_cb)],
+        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done", style="success")],
+        [InlineKeyboardButton(text="🆘 Нужна помощь", callback_data="support")],
+        [
+            InlineKeyboardButton(text="← Назад", callback_data="connect_vpn"),
+            InlineKeyboardButton(text="⮎ Главное меню", callback_data="back_to_menu"),
+        ],
     ])
 
 
+# Старая клавиатура для Android TV
 def _tv_step2_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📺 Подключить AndroidTV", url="https://telegra.ph/Instrukciya-Android-TV-08-10")],
@@ -612,18 +620,15 @@ async def on_connect_vpn(callback: CallbackQuery):
     await callback.answer()
 
 
-# --- ANDROID (ИНСТРУКЦИЯ ИЗ ПРЕДЫДУЩЕГО ШАГА) ---
+# --- ANDROID ---
 @router.callback_query(F.data == "connect_android")
 async def on_connect_android(cb: CallbackQuery):
-    # Активируем триал при первом входе
     user_data = await db.get_user(cb.from_user.id)
     if not user_data.get("trial_used", 0):
         await db.activate_trial(cb.from_user.id)
 
-    # Получаем или создаем ключ
     key = await get_or_create_subscription_link(cb.from_user.id)
 
-    # Формируем текст инструкции
     text = (
         f"<b>Инструкция для Android</b>\n\n"
         f"<b>1️⃣ Нажмите на ссылку, чтобы скопировать вашу подписку:</b>\n"
@@ -641,18 +646,15 @@ async def on_connect_android(cb: CallbackQuery):
     await cb.answer()
 
 
-# --- iOS (НОВАЯ ИНСТРУКЦИЯ) ---
+# --- iOS ---
 @router.callback_query(F.data == "connect_ios")
 async def on_connect_ios(cb: CallbackQuery):
-    # Активируем триал при первом входе
     user_data = await db.get_user(cb.from_user.id)
     if not user_data.get("trial_used", 0):
         await db.activate_trial(cb.from_user.id)
 
-    # Получаем или создаем ключ
     key = await get_or_create_subscription_link(cb.from_user.id)
 
-    # Формируем текст инструкции
     text = (
         f"<b>Инструкция для iPhone / iPad</b>\n\n"
         f"<b>1️⃣ Нажмите на ссылку, чтобы скопировать вашу подписку:</b>\n"
@@ -667,93 +669,55 @@ async def on_connect_ios(cb: CallbackQuery):
     await cb.answer()
 
 
-# --- ОБЩИЙ ОБРАБОТЧИК «ГОТОВО» (для Android и iOS) ---
-@router.callback_query(F.data == "setup_done")
-async def on_setup_done(cb: CallbackQuery):
-    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
-    await cb.answer()
-
-
-# --- WINDOWS (СТАРАЯ ЛОГИКА) ---
-WIN_STEP2_TEXT = (
-    "Установка подписки. 🏁 <b>Шаг 2 из 3</b>\n\nСкачайте и установите приложение для VPN-подключения ⤵️\n\n"
-    "1️⃣ Нажмите на кнопку \"🌐 Скачать приложение\"\n\n2️⃣ Как приложение будет скачано — кликайте на кнопку \"✅ Сделано\""
-)
-
-
+# --- WINDOWS ---
 @router.callback_query(F.data == "connect_windows")
 async def on_connect_windows(cb: CallbackQuery):
-    await cb.message.edit_text(WIN_STEP2_TEXT, reply_markup=_step2_kb("https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe", "windows_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "windows_step2")
-async def on_windows_step2(cb: CallbackQuery):
-    await cb.message.edit_text(WIN_STEP2_TEXT, reply_markup=_step2_kb("https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe", "windows_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "windows_step3")
-async def on_windows_step3(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
     if not user_data.get("trial_used", 0):
         await db.activate_trial(cb.from_user.id)
-    
-    key = "https://example.com/placeholder_key_windows"
+
+    key = await get_or_create_subscription_link(cb.from_user.id)
+
     text = (
-        "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
-        "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
-        f"Ваш ключ-ссылка:\n<code>{key}</code>"
+        f"<b>Инструкция для Windows</b>\n\n"
+        f"<b>1️⃣ Нажмите на ссылку, чтобы скопировать вашу подписку:</b>\n"
+        f"<blockquote><code>{key}</code></blockquote>\n\n"
+        f"<b>2️⃣ Скачайте и установите приложение Happ:</b>\n"
+        f'<a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe">Скачать Happ</a>\n\n'
+        f"<b>3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\".</b>\n\n"
+        f"<b>4️⃣ Включите VPN</b>"
     )
-    await cb.message.edit_text(text, reply_markup=_step3_kb(key, "windows_done", "windows_step2"), parse_mode="HTML")
+
+    await cb.message.edit_text(text, reply_markup=_windows_instruction_kb(), parse_mode="HTML")
     await cb.answer()
 
 
-@router.callback_query(F.data == "windows_done")
-async def on_windows_done(cb: CallbackQuery):
-    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
-    await cb.answer()
-
-
-# --- MACOS (СТАРАЯ ЛОГИКА) ---
-MAC_STEP2_TEXT = (
-    "Установка подписки. 🏁 <b>Шаг 2 из 3</b>\n\nСкачайте и установите приложение для VPN-подключения ⤵️\n\n"
-    "1️⃣ Нажмите на кнопку \"🌐 Скачать приложение\"\n\n2️⃣ Как приложение будет скачано — кликайте на кнопку \"✅ Сделано\"\n\n"
-    "Если приложение по кнопке ниже недоступно, нажмите сюда 👉 "
-    '<a href="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215">Happ Global</a>'
-)
-
-
+# --- MACOS ---
 @router.callback_query(F.data == "connect_macos")
 async def on_connect_macos(cb: CallbackQuery):
-    await cb.message.edit_text(MAC_STEP2_TEXT, reply_markup=_step2_kb("https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973", "macos_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "macos_step2")
-async def on_macos_step2(cb: CallbackQuery):
-    await cb.message.edit_text(MAC_STEP2_TEXT, reply_markup=_step2_kb("https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973", "macos_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "macos_step3")
-async def on_macos_step3(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
     if not user_data.get("trial_used", 0):
         await db.activate_trial(cb.from_user.id)
-    
-    key = "https://example.com/placeholder_key_macos"
+
+    key = await get_or_create_subscription_link(cb.from_user.id)
+
     text = (
-        "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
-        "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
-        f"Ваш ключ-ссылка:\n<code>{key}</code>"
+        f"<b>Инструкция для macOS</b>\n\n"
+        f"<b>1️⃣ Нажмите на ссылку, чтобы скопировать вашу подписку:</b>\n"
+        f"<blockquote><code>{key}</code></blockquote>\n\n"
+        f"<b>2️⃣ Установите приложение INCY из App Store:</b>\n"
+        f'<a href="https://apps.apple.com/ru/app/incy/id6756943388">Скачать INCY</a>\n\n'
+        f"<b>3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\".</b>\n\n"
+        f"<b>4️⃣ Включите VPN</b>"
     )
-    await cb.message.edit_text(text, reply_markup=_step3_kb(key, "macos_done", "macos_step2"), parse_mode="HTML")
+
+    await cb.message.edit_text(text, reply_markup=_macos_instruction_kb(), parse_mode="HTML")
     await cb.answer()
 
 
-@router.callback_query(F.data == "macos_done")
-async def on_macos_done(cb: CallbackQuery):
+# --- ОБЩИЙ ОБРАБОТЧИК «ГОТОВО» (для Android, iOS, Windows, macOS) ---
+@router.callback_query(F.data == "setup_done")
+async def on_setup_done(cb: CallbackQuery):
     await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
     await cb.answer()
 
