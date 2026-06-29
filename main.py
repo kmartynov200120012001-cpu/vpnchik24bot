@@ -150,29 +150,33 @@ def get_device_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def _instruction_kb(app_url: str, fallback_url: str | None, key_link: str) -> InlineKeyboardMarkup:
-    """Клавиатура для инструкции (шаг 2)."""
-    buttons = [
+# Клавиатура для новой инструкции Android
+def _android_instruction_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done", style="success")],
         [InlineKeyboardButton(text="🆘 Нужна помощь", callback_data="support")],
-    ]
-    
-    # Если есть fallback ссылка (например, APK или Global App Store), добавляем её
-    if fallback_url:
-        buttons.insert(0, [
-            InlineKeyboardButton(text="🌐 Скачать приложение", url=app_url),
-            InlineKeyboardButton(text="📦 Альтернативная ссылка", url=fallback_url),
-        ])
-    else:
-        buttons.insert(0, [InlineKeyboardButton(text="🌐 Скачать приложение", url=app_url)])
-        
-    # Кнопка копирования ключа всегда сверху или внизу? По ТЗ она внутри текста, 
-    # но для удобства лучше продублировать или оставить как CopyTextButton в тексте.
-    # В ТЗ кнопки: Готово, Нужна помощь, Назад. Ключ копируется по тапу на текст.
-    
-    buttons.append([InlineKeyboardButton(text="← Назад ⮎ Главное меню", callback_data="back_to_menu")])
-    
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+        [
+            InlineKeyboardButton(text="← Назад", callback_data="connect_vpn"),
+            InlineKeyboardButton(text="⮎ Главное меню", callback_data="back_to_menu"),
+        ],
+    ])
+
+
+# Старые клавиатуры для остальных платформ (остаются без изменений)
+def _step2_kb(url: str, next_cb: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🌐 Скачать приложение", url=url)],
+        [InlineKeyboardButton(text="✅ Сделано", callback_data=next_cb)],
+        [InlineKeyboardButton(text="← Назад", callback_data="connect_vpn")],
+    ])
+
+
+def _step3_kb(key_link: str, done_cb: str, back_cb: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📌 Копировать ключ-ссылку", copy_text=CopyTextButton(text=key_link))],
+        [InlineKeyboardButton(text="✅ Сделано", callback_data=done_cb)],
+        [InlineKeyboardButton(text="← Назад", callback_data=back_cb)],
+    ])
 
 
 def _tv_step2_kb() -> InlineKeyboardMarkup:
@@ -596,8 +600,9 @@ async def on_connect_vpn(callback: CallbackQuery):
     await callback.answer()
 
 
-async def _show_instruction(cb: CallbackQuery, platform_name: str, app_url: str, fallback_url: str | None = None):
-    """Универсальная функция показа инструкции (Шаг 2)."""
+# --- ANDROID (НОВАЯ ИНСТРУКЦИЯ) ---
+@router.callback_query(F.data == "connect_android")
+async def on_connect_android(cb: CallbackQuery):
     # Активируем триал при первом входе
     user_data = await db.get_user(cb.from_user.id)
     if not user_data.get("trial_used", 0):
@@ -606,85 +611,159 @@ async def _show_instruction(cb: CallbackQuery, platform_name: str, app_url: str,
     # Получаем или создаем ключ
     key = await get_or_create_subscription_link(cb.from_user.id)
 
-    # Формируем текст инструкции (весь жирный, кроме блока с кодом)
+    # Формируем текст инструкции
     text = (
-        f"<b>Инструкция для {platform_name}</b>\n\n"
+        f"<b>Инструкция для Android</b>\n\n"
         f"<b>1️⃣ Нажмите на ссылку, чтобы скопировать вашу подписку:</b>\n"
         f"<blockquote><code>{key}</code></blockquote>\n\n"
-        f"<b>2️⃣ Установите приложение Happ из Google Play или скачайте APK.</b>\n\n"
+        f"<b>2️⃣ Установите приложение Happ из </b>"
+        f'<a href="https://play.google.com/store/apps/details?id=com.happproxy">Google Play</a>'
+        f"<b> или </b>"
+        f'<a href="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk">скачайте APK</a>.'
+        f"\n\n"
         f"<b>3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\".</b>\n\n"
         f"<b>4️⃣ Подключитесь к серверу VPNchik24</b>"
     )
-    
-    # Для iOS и других платформ текст шага 2 может отличаться ссылками, 
-    # но по ТЗ просили именно такой текст для Android. 
-    # Для остальных платформ можно адаптировать, но пока сделаем универсально.
-    # Если нужно строго для Android, то остальные платформы можно оставить как были или тоже обновить.
-    # Ниже пример адаптации ссылок в тексте, если они отличаются от стандартных.
-    
-    if platform_name == "Android":
-        # В тексте уже есть общие слова, но ссылки в кнопках будут разными.
-        pass 
-    elif platform_name == "iOS":
-         text = text.replace("Google Play или скачайте APK", "App Store")
-    elif platform_name == "Windows":
-         text = text.replace("Google Play или скачайте APK", "официального сайта")
-    elif platform_name == "macOS":
-         text = text.replace("Google Play или скачайте APK", "App Store")
 
-    await cb.message.edit_text(
-        text, 
-        reply_markup=_instruction_kb(app_url, fallback_url, key), 
-        parse_mode="HTML"
-    )
+    await cb.message.edit_text(text, reply_markup=_android_instruction_kb(), parse_mode="HTML")
     await cb.answer()
 
 
-# --- ANDROID ---
-@router.callback_query(F.data == "connect_android")
-async def on_connect_android(cb: CallbackQuery):
-    await _show_instruction(
-        cb, 
-        "Android", 
-        app_url="https://play.google.com/store/apps/details?id=com.happproxy",
-        fallback_url="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk"
-    )
+# --- ОБЩИЙ ОБРАБОТЧИК «ГОТОВО» ДЛЯ ANDROID ---
+@router.callback_query(F.data == "setup_done")
+async def on_setup_done(cb: CallbackQuery):
+    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
+    await cb.answer()
 
 
-# --- iOS ---
+# --- iOS (СТАРАЯ ЛОГИКА) ---
+IOS_STEP2_TEXT = (
+    "Установка подписки. 🏁 <b>Шаг 2 из 3</b>\n\nСкачайте и установите приложение для VPN-подключения ⤵️\n\n"
+    "1️⃣ Нажмите на кнопку \"🌐 Скачать приложение\"\n\n2️⃣ Как приложение будет скачано — кликайте на кнопку \"✅ Сделано\"\n\n"
+    "Если приложение по кнопке ниже недоступно, нажмите сюда 👉 "
+    '<a href="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215">Happ Global</a>'
+)
+
+
 @router.callback_query(F.data == "connect_ios")
 async def on_connect_ios(cb: CallbackQuery):
-    await _show_instruction(
-        cb, 
-        "iOS", 
-        app_url="https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973",
-        fallback_url="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215"
+    await cb.message.edit_text(IOS_STEP2_TEXT, reply_markup=_step2_kb("https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973", "ios_step3"), parse_mode="HTML")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "ios_step2")
+async def on_ios_step2(cb: CallbackQuery):
+    await cb.message.edit_text(IOS_STEP2_TEXT, reply_markup=_step2_kb("https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973", "ios_step3"), parse_mode="HTML")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "ios_step3")
+async def on_ios_step3(cb: CallbackQuery):
+    user_data = await db.get_user(cb.from_user.id)
+    if not user_data.get("trial_used", 0):
+        await db.activate_trial(cb.from_user.id)
+    
+    key = "https://example.com/placeholder_key_ios"
+    text = (
+        "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
+        "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
+        f"Ваш ключ-ссылка:\n<code>{key}</code>"
     )
+    await cb.message.edit_text(text, reply_markup=_step3_kb(key, "ios_done", "ios_step2"), parse_mode="HTML")
+    await cb.answer()
 
 
-# --- WINDOWS ---
+@router.callback_query(F.data == "ios_done")
+async def on_ios_done(cb: CallbackQuery):
+    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
+    await cb.answer()
+
+
+# --- WINDOWS (СТАРАЯ ЛОГИКА) ---
+WIN_STEP2_TEXT = (
+    "Установка подписки. 🏁 <b>Шаг 2 из 3</b>\n\nСкачайте и установите приложение для VPN-подключения ⤵️\n\n"
+    "1️⃣ Нажмите на кнопку \"🌐 Скачать приложение\"\n\n2️⃣ Как приложение будет скачано — кликайте на кнопку \"✅ Сделано\""
+)
+
+
 @router.callback_query(F.data == "connect_windows")
 async def on_connect_windows(cb: CallbackQuery):
-    await _show_instruction(
-        cb, 
-        "Windows", 
-        app_url="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe",
-        fallback_url=None
+    await cb.message.edit_text(WIN_STEP2_TEXT, reply_markup=_step2_kb("https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe", "windows_step3"), parse_mode="HTML")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "windows_step2")
+async def on_windows_step2(cb: CallbackQuery):
+    await cb.message.edit_text(WIN_STEP2_TEXT, reply_markup=_step2_kb("https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe", "windows_step3"), parse_mode="HTML")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "windows_step3")
+async def on_windows_step3(cb: CallbackQuery):
+    user_data = await db.get_user(cb.from_user.id)
+    if not user_data.get("trial_used", 0):
+        await db.activate_trial(cb.from_user.id)
+    
+    key = "https://example.com/placeholder_key_windows"
+    text = (
+        "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
+        "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
+        f"Ваш ключ-ссылка:\n<code>{key}</code>"
     )
+    await cb.message.edit_text(text, reply_markup=_step3_kb(key, "windows_done", "windows_step2"), parse_mode="HTML")
+    await cb.answer()
 
 
-# --- MACOS ---
+@router.callback_query(F.data == "windows_done")
+async def on_windows_done(cb: CallbackQuery):
+    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
+    await cb.answer()
+
+
+# --- MACOS (СТАРАЯ ЛОГИКА) ---
+MAC_STEP2_TEXT = (
+    "Установка подписки. 🏁 <b>Шаг 2 из 3</b>\n\nСкачайте и установите приложение для VPN-подключения ⤵️\n\n"
+    "1️⃣ Нажмите на кнопку \"🌐 Скачать приложение\"\n\n2️⃣ Как приложение будет скачано — кликайте на кнопку \"✅ Сделано\"\n\n"
+    "Если приложение по кнопке ниже недоступно, нажмите сюда 👉 "
+    '<a href="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215">Happ Global</a>'
+)
+
+
 @router.callback_query(F.data == "connect_macos")
 async def on_connect_macos(cb: CallbackQuery):
-    await _show_instruction(
-        cb, 
-        "macOS", 
-        app_url="https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973",
-        fallback_url="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215"
+    await cb.message.edit_text(MAC_STEP2_TEXT, reply_markup=_step2_kb("https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973", "macos_step3"), parse_mode="HTML")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "macos_step2")
+async def on_macos_step2(cb: CallbackQuery):
+    await cb.message.edit_text(MAC_STEP2_TEXT, reply_markup=_step2_kb("https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973", "macos_step3"), parse_mode="HTML")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "macos_step3")
+async def on_macos_step3(cb: CallbackQuery):
+    user_data = await db.get_user(cb.from_user.id)
+    if not user_data.get("trial_used", 0):
+        await db.activate_trial(cb.from_user.id)
+    
+    key = "https://example.com/placeholder_key_macos"
+    text = (
+        "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
+        "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
+        f"Ваш ключ-ссылка:\n<code>{key}</code>"
     )
+    await cb.message.edit_text(text, reply_markup=_step3_kb(key, "macos_done", "macos_step2"), parse_mode="HTML")
+    await cb.answer()
 
 
-# --- ANDROID TV ---
+@router.callback_query(F.data == "macos_done")
+async def on_macos_done(cb: CallbackQuery):
+    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
+    await cb.answer()
+
+
+# --- ANDROID TV (СТАРАЯ ЛОГИКА) ---
 @router.callback_query(F.data == "connect_android_tv")
 async def on_connect_android_tv(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
@@ -694,13 +773,6 @@ async def on_connect_android_tv(cb: CallbackQuery):
         "Нажмите на кнопку ниже и следуйте инструкции 👇",
         reply_markup=_tv_step2_kb(), parse_mode="HTML",
     )
-    await cb.answer()
-
-
-# --- ОБЩИЙ ОБРАБОТЧИК «ГОТОВО» ---
-@router.callback_query(F.data == "setup_done")
-async def on_setup_done(cb: CallbackQuery):
-    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
     await cb.answer()
 
 
