@@ -19,9 +19,8 @@ from aiogram.types import (
     FSInputFile,
 )
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.client.session.aiohttp import AiohttpSession
 
-from config import BOT_TOKEN, FREE_TRIAL_DAYS, TARIFFS, PROXY_URL
+from config import BOT_TOKEN, FREE_TRIAL_DAYS, TARIFFS
 from database import db
 from admin import admin_router
 from payments import create_payment
@@ -34,9 +33,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
-
 bot = Bot(token=BOT_TOKEN)
-
 dp = Dispatcher()
 router = Router()
 
@@ -58,7 +55,6 @@ def generate_qr_code(data: str) -> BufferedInputFile:
 
 
 def get_days_since_registration(created_at_str: str) -> int:
-    """Рассчитывает количество дней с момента регистрации."""
     if not created_at_str:
         return 0
     try:
@@ -69,16 +65,27 @@ def get_days_since_registration(created_at_str: str) -> int:
         return 0
 
 
+async def get_or_create_subscription_link(user_id: int) -> str:
+    """Возвращает subscription URL. Создаёт клиента в 3x-ui если его нет."""
+    email, sub_id = await db.get_xui_client(user_id)
+    if email and sub_id:
+        return xui.build_subscription_url(sub_id)
+
+    try:
+        result = await xui.add_client(user_id=user_id, days=FREE_TRIAL_DAYS)
+    except Exception as e:
+        logging.error(f"Не удалось создать 3x-ui клиента для {user_id}: {e}")
+        return "⚠️ Не удалось сгенерировать ключ. Попробуйте позже или напишите в поддержку."
+
+    await db.save_xui_client(user_id, result["email"], result["sub_id"])
+    return xui.build_subscription_url(result["sub_id"])
+
+
 # ==================== КЛАВИАТУРЫ ====================
 
 def get_main_keyboard_new_user() -> InlineKeyboardMarkup:
-    """Меню для новых пользователей (триал ещё не использован)."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="➕ Подключить VPN",
-            callback_data="connect_vpn",
-            style="success",
-        )],
+        [InlineKeyboardButton(text="➕ Подключить VPN", callback_data="connect_vpn", style="success")],
     ])
 
 
@@ -91,7 +98,6 @@ def get_main_keyboard_before_activation() -> InlineKeyboardMarkup:
 
 
 def get_main_keyboard_after_activation() -> InlineKeyboardMarkup:
-    """Стандартное меню для ПЛАТНЫХ подписок (не триал)."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
         [InlineKeyboardButton(text="🫂 Получить месяц бесплатно", callback_data="referral")],
@@ -103,7 +109,6 @@ def get_main_keyboard_after_activation() -> InlineKeyboardMarkup:
 
 
 def get_trial_dynamic_keyboard(key_link: str) -> InlineKeyboardMarkup:
-    """Динамическое меню для всего периода действия триала."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
         [InlineKeyboardButton(text="🫂 Пригласить друзей", callback_data="referral")],
@@ -145,21 +150,13 @@ def get_device_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-# --- Универсальные конструкторы клавиатур для инструкций ---
-
-def _step2_kb(url: str, next_cb: str) -> InlineKeyboardMarkup:
+def _step2_kb(url: str, key_link: str) -> InlineKeyboardMarkup:
+    """Клавиатура шага 2: скачать приложение + скопировать ключ + готово + назад."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌐 Скачать приложение", url=url)],
-        [InlineKeyboardButton(text="✅ Сделано", callback_data=next_cb)],
-        [InlineKeyboardButton(text="← Назад", callback_data="connect_vpn")],
-    ])
-
-
-def _step3_kb(key_link: str, done_cb: str, back_cb: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📌 Копировать ключ-ссылку", copy_text=CopyTextButton(text=key_link))],
-        [InlineKeyboardButton(text="✅ Сделано", callback_data=done_cb)],
-        [InlineKeyboardButton(text="← Назад", callback_data=back_cb)],
+        [InlineKeyboardButton(text="✅ Сделано", callback_data="setup_done")],
+        [InlineKeyboardButton(text="← Назад", callback_data="connect_vpn")],
     ])
 
 
@@ -172,7 +169,6 @@ def _tv_step2_kb() -> InlineKeyboardMarkup:
 
 
 def _format_tariff_text(tariff: dict) -> str:
-    """Формирует текст кнопки тарифа с автоматическим расчётом ₽/мес."""
     if tariff["months"] >= 3:
         per_month = round(tariff["price"] / tariff["months"])
         return f"{tariff['name']} — {tariff['price']} ₽ ({per_month} ₽/мес)"
@@ -180,25 +176,19 @@ def _format_tariff_text(tariff: dict) -> str:
 
 
 def get_tariffs_keyboard() -> InlineKeyboardMarkup:
-    """Меню тарифов с описанием и специальными стилями."""
     buttons = []
-    
     for t in TARIFFS:
         text = _format_tariff_text(t)
         cb = t["callback"]
-        
-        # Добавляем эмодзи и стиль для конкретных тарифов
         if t["months"] == 6:
             text += " 🔥"
-            style = "success" # Зеленый
+            style = "success"
         elif t["months"] == 12:
             text += " 💎"
-            style = "primary" # Синий
+            style = "primary"
         else:
-            style = None # Стандартный стиль
-            
+            style = None
         buttons.append([InlineKeyboardButton(text=text, callback_data=cb, style=style)])
-
     buttons.append([InlineKeyboardButton(text="← Главное меню", callback_data="back_to_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -206,7 +196,6 @@ def get_tariffs_keyboard() -> InlineKeyboardMarkup:
 # ==================== ТЕКСТЫ И СТАТУСЫ ====================
 
 def get_subscription_status(user: dict) -> tuple[str, str, str]:
-    """Возвращает (статус_код, статус_эмодзи, дата_окончания)."""
     trial_used = user.get("trial_used", 0)
     is_trial = user.get("is_trial", 0)
     ends_at_str = user.get("subscription_ends_at")
@@ -228,7 +217,6 @@ def get_subscription_status(user: dict) -> tuple[str, str, str]:
 
 
 def get_welcome_text(name: str) -> str:
-    """Приветственное сообщение для новых пользователей."""
     return (
         f"👋 Привет, <b>{name}</b>! Это <b>VPNчик 24</b>\n\n"
         f"😻 Первые 3 дня — БЕСПЛАТНО\n\n"
@@ -237,31 +225,25 @@ def get_welcome_text(name: str) -> str:
 
 
 def get_paid_profile_text(user: dict) -> str:
-    """Текст профиля для активной платной подписки (2 варианта)."""
     ends_at_str = user.get("subscription_ends_at")
-
     sub_id = user.get("xui_sub_id")
     if sub_id:
         key_link = xui.build_subscription_url(sub_id)
     else:
-        # У пользователя ещё нет VPN-клиента (не проходил настройку устройства) —
-        # отправляем в шаг выбора устройства, где ключ создастся автоматически.
         key_link = "Ключ ещё не создан — выберите устройство в разделе «Подключиться»"
 
     if not ends_at_str:
-        return get_profile_text(user) # Fallback
+        return get_profile_text(user)
 
     try:
         ends_at = datetime.fromisoformat(ends_at_str)
         now = datetime.now()
         delta = ends_at - now
-        
-        if delta.total_seconds() <= 0:
-             return get_profile_text(user) # Истекла
 
-        # Форматируем дату окончания
+        if delta.total_seconds() <= 0:
+            return get_profile_text(user)
+
         end_date_fmt = ends_at.strftime("%d %B %Y, %H:%M")
-        # Русские месяцы
         months_ru = {
             "January": "января", "February": "февраля", "March": "марта", "April": "апреля",
             "May": "мая", "June": "июня", "July": "июля", "August": "августа",
@@ -269,13 +251,11 @@ def get_paid_profile_text(user: dict) -> str:
         }
         for eng, ru in months_ru.items():
             end_date_fmt = end_date_fmt.replace(eng, ru)
-            
-        # Расчет оставшегося времени
+
         days_left = delta.days
         hours_left = delta.seconds // 3600
-        
+
         if days_left > 3:
-            # Вариант 1: Больше 3 дней
             text = (
                 f"🟢 <b>VPN подключен</b>\n\n"
                 f"<b>Подписка действует до</b> <i>{end_date_fmt}</i>\n\n"
@@ -284,8 +264,6 @@ def get_paid_profile_text(user: dict) -> str:
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
         else:
-            # Вариант 2: 3 дня и меньше
-            # Склонение дней и часов
             if days_left > 0:
                 day_word = "день" if days_left == 1 else "дня" if days_left < 5 else "дней"
                 hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
@@ -293,7 +271,7 @@ def get_paid_profile_text(user: dict) -> str:
             else:
                 hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
                 time_left_text = f"{hours_left} {hour_word}"
-            
+
             text = (
                 f"🟡 <b>VPN подключен</b>\n\n"
                 f"Подписка скоро закончится ⏳\n"
@@ -302,7 +280,6 @@ def get_paid_profile_text(user: dict) -> str:
                 f"🔑 <b>Ваш ключ доступа:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
-            
     except Exception as e:
         logging.error(f"Error formatting paid profile: {e}")
         return get_profile_text(user)
@@ -311,30 +288,23 @@ def get_paid_profile_text(user: dict) -> str:
 
 
 def get_profile_text(user: dict) -> str:
-    """Общая функция профиля. Для платных использует новую логику."""
     code, _, _ = get_subscription_status(user)
-    
     if code == "active":
         return get_paid_profile_text(user)
-        
-    # Старая логика для остальных случаев
+
     uid = user.get("user_id", "N/A")
     name = user.get("full_name", "Не указано")
     status, msg_short = "", ""
-    
+
     if code == "new":
         msg_short = f"Вам доступен бесплатный период на {FREE_TRIAL_DAYS} дня!"
     elif code == "trial_active":
-         _, _, date_str = get_subscription_status(user)
-         msg_short = f"Действует до: {date_str}"
+        _, _, date_str = get_subscription_status(user)
+        msg_short = f"Действует до: {date_str}"
     else:
         msg_short = "Оформите подписку, чтобы продолжить."
-        
-    status_map = {
-        "new": "🎁 доступен",
-        "trial_active": "🎁 триал активен",
-        "expired": "❌ истёк"
-    }
+
+    status_map = {"new": "🎁 доступен", "trial_active": "🎁 триал активен", "expired": "❌ истёк"}
     status = status_map.get(code, "")
 
     return (
@@ -344,10 +314,7 @@ def get_profile_text(user: dict) -> str:
 
 
 def get_trial_welcome_text(user: dict, key_link: str) -> str:
-    """Текст динамического меню на весь период триала."""
     ends_at_str = user.get("subscription_ends_at")
-    
-    # Рассчитываем оставшееся время
     remaining_text = "—"
     if ends_at_str:
         try:
@@ -357,8 +324,6 @@ def get_trial_welcome_text(user: dict, key_link: str) -> str:
                 delta = ends_at - now
                 days = delta.days
                 hours = delta.seconds // 3600
-                
-                # Форматируем текст
                 if days > 0:
                     day_word = "день" if days == 1 else "дня" if days < 5 else "дней"
                     remaining_text = f"{days} {day_word} {hours} часа"
@@ -368,25 +333,18 @@ def get_trial_welcome_text(user: dict, key_link: str) -> str:
             pass
 
     return (
-        f"🟢 <b>VPN работает</b>\n"
-        f"\n"
+        f"🟢 <b>VPN работает</b>\n\n"
         f"<blockquote>До 5 устройств\n"
-        f"<b>Осталось:</b> <i>{remaining_text}</i></blockquote>\n"
-        f"\n"
-        f"💎 Продлить доступ можно в любой момент\n"
-        f"\n"
+        f"<b>Осталось:</b> <i>{remaining_text}</i></blockquote>\n\n"
+        f"💎 Продлить доступ можно в любой момент\n\n"
         f"🔑 <b>Ваш ключ доступа:</b>\n"
         f"<blockquote><code>{key_link}</code></blockquote>\n"
     )
 
 
 def get_keyboard_for_user(user: dict) -> InlineKeyboardMarkup:
-    """Выбирает клавиатуру в зависимости от статуса.
-    Для триала возвращает динамическую клавиатуру с ключом.
-    """
     code, _, _ = get_subscription_status(user)
     if code == "trial_active":
-        # Для триала всегда динамическая клавиатура
         sub_id = user.get("xui_sub_id")
         key_link = xui.build_subscription_url(sub_id) if sub_id else "⚠️ Ключ ещё не создан"
         return get_trial_dynamic_keyboard(key_link)
@@ -410,7 +368,6 @@ async def delete_old_menu(bot: Bot, chat_id: int, user_id: int) -> None:
 
 
 async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bool = False) -> None:
-    """Единая функция отправки главного меню."""
     await delete_old_menu(bot, chat_id, user_id)
     user_data = await db.get_user(user_id)
     code, _, _ = get_subscription_status(user_data)
@@ -418,7 +375,6 @@ async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bo
     if code == "trial_active":
         if is_activation:
             await bot.send_animation(chat_id=chat_id, animation=FSInputFile(CONGRATS_GIF_PATH))
-
         sub_id = user_data.get("xui_sub_id")
         key_link = xui.build_subscription_url(sub_id) if sub_id else "⚠️ Ключ ещё не создан"
         sent = await bot.send_message(
@@ -428,7 +384,6 @@ async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bo
             parse_mode="HTML",
         )
     elif code == "new":
-        # Приветственное сообщение с КАРТИНКОЙ
         name = user_data.get("full_name", "друг")
         sent = await bot.send_photo(
             chat_id=chat_id,
@@ -444,7 +399,6 @@ async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bo
             reply_markup=get_keyboard_for_user(user_data),
             parse_mode="HTML",
         )
-
     await db.save_menu_message_id(user_id, sent.message_id)
 
 
@@ -458,7 +412,6 @@ async def cmd_start(message: Message):
             referrer_id = int(message.text.split("ref_")[1].split()[0])
         except (ValueError, IndexError):
             pass
-
     await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name, referrer_id)
     await send_main_menu(bot, message.chat.id, message.from_user.id, is_activation=False)
 
@@ -565,7 +518,6 @@ async def on_my_referrals(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("tariff_"))
 async def on_tariff_selected(callback: CallbackQuery):
     await callback.answer("💳 Создаём ссылку на оплату...")
-
     tariff_cb = callback.data
     tariff = next((t for t in TARIFFS if t["callback"] == tariff_cb), None)
     if not tariff:
@@ -573,7 +525,6 @@ async def on_tariff_selected(callback: CallbackQuery):
         return
 
     days = tariff["days"]
-
     try:
         payment = await create_payment(
             amount=tariff["price"],
@@ -583,26 +534,19 @@ async def on_tariff_selected(callback: CallbackQuery):
         )
     except Exception as e:
         logging.error(f"Ошибка создания платежа Platega: {e}")
-        await callback.message.answer(
-            "⚠️ Не удалось создать ссылку на оплату. Попробуйте позже или обратитесь в поддержку."
-        )
+        await callback.message.answer("⚠️ Не удалось создать ссылку на оплату. Попробуйте позже или обратитесь в поддержку.")
         return
 
     transaction_id = payment.get("transactionId")
     pay_url = payment.get("redirect")
-
     if not transaction_id or not pay_url:
         logging.error(f"Platega вернула неожиданный ответ: {payment}")
         await callback.message.answer("⚠️ Ошибка при создании платежа. Попробуйте позже.")
         return
 
     await db.create_transaction(
-        transaction_id=transaction_id,
-        user_id=callback.from_user.id,
-        tariff_callback=tariff_cb,
-        months=tariff["months"],
-        days=days,
-        amount=tariff["price"],
+        transaction_id=transaction_id, user_id=callback.from_user.id,
+        tariff_callback=tariff_cb, months=tariff["months"], days=days, amount=tariff["price"],
     )
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -614,8 +558,7 @@ async def on_tariff_selected(callback: CallbackQuery):
         f"Сумма: <b>{tariff['price']} ₽</b>\n\n"
         "Нажмите «Оплатить» и завершите платёж. "
         "После успешной оплаты подписка продлится автоматически — вы получите уведомление здесь.",
-        reply_markup=kb,
-        parse_mode="HTML",
+        reply_markup=kb, parse_mode="HTML",
     )
 
 
@@ -623,243 +566,100 @@ async def on_tariff_selected(callback: CallbackQuery):
 
 @router.callback_query(F.data == "connect_vpn")
 async def on_connect_vpn(callback: CallbackQuery):
-    """Шаг 1 из 3 — выбор устройства.
-    
-    Если текущее сообщение — фото (приветственное меню), 
-    то удаляем его и отправляем новое текстовое.
-    Если текущее сообщение — текст, то просто редактируем.
-    """
     if callback.message.photo:
-        # Это приветственное фото-меню — удаляем и отправляем новое
         await delete_old_menu(bot, callback.message.chat.id, callback.from_user.id)
-        
         sent = await callback.message.answer(
-            "🏁 <b>Шаг 1 из 3</b>\n\nВыберите своё устройство ⤵️",
-            reply_markup=get_device_keyboard(),
-            parse_mode="HTML",
+            "🏁 <b>Выберите своё устройство</b> ⤵️",
+            reply_markup=get_device_keyboard(), parse_mode="HTML",
         )
         await db.save_menu_message_id(callback.from_user.id, sent.message_id)
     else:
-        # Обычное текстовое меню — просто редактируем
         await callback.message.edit_text(
-            "🏁 <b>Шаг 1 из 3</b>\n\nВыберите своё устройство ⤵️",
-            reply_markup=get_device_keyboard(),
-            parse_mode="HTML",
+            "🏁 <b>Выберите своё устройство</b> ⤵️",
+            reply_markup=get_device_keyboard(), parse_mode="HTML",
         )
-    
     await callback.answer()
 
 
-async def get_or_create_subscription_link(user_id: int) -> str:
-    """
-    Возвращает subscription URL для пользователя.
-    Если у пользователя уже есть VPN-клиент в 3x-ui (он проходил настройку на другой
-    платформе или продлевал подписку) — просто возвращает существующую ссылку.
-    Иначе создаёт нового клиента на FREE_TRIAL_DAYS дней (триал) и сохраняет в БД.
+async def _show_step2(cb: CallbackQuery, app_url: str, fallback_html: str = ""):
+    """Общая логика шага 2: активирует триал, создаёт ключ, показывает инструкцию + ключ."""
+    user_data = await db.get_user(cb.from_user.id)
+    if not user_data.get("trial_used", 0):
+        await db.activate_trial(cb.from_user.id)
 
-    Срок действия клиента в 3x-ui синхронизируется отдельно при оплате (см. webhook.py),
-    эта функция отвечает только за выдачу ссылки и первичное создание клиента.
-    """
-    email, sub_id = await db.get_xui_client(user_id)
+    key = await get_or_create_subscription_link(cb.from_user.id)
 
-    if email and sub_id:
-        return xui.build_subscription_url(sub_id)
+    text = (
+        f"🏁 <b>Инструкция по подключению</b>\n\n"
+        f"1️⃣ Скачайте приложение по кнопке ниже\n"
+        f"2️⃣ Скопируйте ключ-ссылку и добавьте её в приложение\n"
+        f"3️⃣ Нажмите «✅ Сделано» когда всё готово\n"
+    )
+    if fallback_html:
+        text += f"\nЕсли кнопка не работает: {fallback_html}"
 
-    # Клиента ещё нет — создаём с пробным сроком
-    try:
-        result = await xui.add_client(user_id=user_id, days=FREE_TRIAL_DAYS)
-    except Exception as e:
-        logging.error(f"Не удалось создать 3x-ui клиента для {user_id}: {e}")
-        return "⚠️ Не удалось сгенерировать ключ. Попробуйте позже или напишите в поддержку."
+    text += f"\n\n🔑 <b>Ваш ключ-ссылка:</b>\n<blockquote><code>{key}</code></blockquote>"
 
-    await db.save_xui_client(user_id, result["email"], result["sub_id"])
-    return xui.build_subscription_url(result["sub_id"])
+    await cb.message.edit_text(text, reply_markup=_step2_kb(app_url, key), parse_mode="HTML")
+    await cb.answer()
 
 
 # --- ANDROID ---
-ANDROID_STEP2_TEXT = (
-    "Установка подписки. 🏁 <b>Шаг 2 из 3</b>\n\nСкачайте и установите приложение для VPN-подключения ⤵️\n\n"
-    "1️⃣ Нажмите на кнопку \"🌐 Скачать приложение\"\n\n2️⃣ Как приложение будет скачано — кликайте на кнопку \"✅ Сделано\"\n\n"
-    "Если приложение по кнопке ниже недоступно, нажмите сюда 👉 "
-    '<a href="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk">Happ APK</a>'
-)
-
-
 @router.callback_query(F.data == "connect_android")
 async def on_connect_android(cb: CallbackQuery):
-    await cb.message.edit_text(ANDROID_STEP2_TEXT, reply_markup=_step2_kb("https://play.google.com/store/apps/details?id=com.happproxy&hl=ru&pli=1", "android_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "android_step2")
-async def on_android_step2(cb: CallbackQuery):
-    await cb.message.edit_text(ANDROID_STEP2_TEXT, reply_markup=_step2_kb("https://play.google.com/store/apps/details?id=com.happproxy&hl=ru&pli=1", "android_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "android_step3")
-async def on_android_step3(cb: CallbackQuery):
-    # Активируем триал при первом входе на шаг 3
-    user_data = await db.get_user(cb.from_user.id)
-    if not user_data.get("trial_used", 0):
-        await db.activate_trial(cb.from_user.id)
-
-    key = await get_or_create_subscription_link(cb.from_user.id)
-    text = (
-        "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
-        "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
-        f"Ваш ключ-ссылка:\n<blockquote><code>{key}</code></blockquote>"
+    await _show_step2(
+        cb,
+        app_url="https://play.google.com/store/apps/details?id=com.happproxy&hl=ru&pli=1",
+        fallback_html='<a href="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk">Happ APK</a>',
     )
-    await cb.message.edit_text(text, reply_markup=_step3_kb(key, "android_done", "android_step2"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "android_done")
-async def on_android_done(cb: CallbackQuery):
-    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
-    await cb.answer()
 
 
 # --- iOS ---
-IOS_STEP2_TEXT = (
-    "Установка подписки. 🏁 <b>Шаг 2 из 3</b>\n\nСкачайте и установите приложение для VPN-подключения ⤵️\n\n"
-    "1️⃣ Нажмите на кнопку \"🌐 Скачать приложение\"\n\n2️⃣ Как приложение будет скачано — кликайте на кнопку \"✅ Сделано\"\n\n"
-    "Если приложение по кнопке ниже недоступно, нажмите сюда 👉 "
-    '<a href="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215">Happ Global</a>'
-)
-
-
 @router.callback_query(F.data == "connect_ios")
 async def on_connect_ios(cb: CallbackQuery):
-    await cb.message.edit_text(IOS_STEP2_TEXT, reply_markup=_step2_kb("https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973", "ios_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "ios_step2")
-async def on_ios_step2(cb: CallbackQuery):
-    await cb.message.edit_text(IOS_STEP2_TEXT, reply_markup=_step2_kb("https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973", "ios_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "ios_step3")
-async def on_ios_step3(cb: CallbackQuery):
-    user_data = await db.get_user(cb.from_user.id)
-    if not user_data.get("trial_used", 0):
-        await db.activate_trial(cb.from_user.id)
-
-    key = await get_or_create_subscription_link(cb.from_user.id)
-    text = (
-        "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
-        "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
-        f"Ваш ключ-ссылка:\n<blockquote><code>{key}</code></blockquote>"
+    await _show_step2(
+        cb,
+        app_url="https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973",
+        fallback_html='<a href="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215">Happ Global</a>',
     )
-    await cb.message.edit_text(text, reply_markup=_step3_kb(key, "ios_done", "ios_step2"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "ios_done")
-async def on_ios_done(cb: CallbackQuery):
-    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
-    await cb.answer()
 
 
 # --- WINDOWS ---
-WIN_STEP2_TEXT = (
-    "Установка подписки. 🏁 <b>Шаг 2 из 3</b>\n\nСкачайте и установите приложение для VPN-подключения ⤵️\n\n"
-    "1️⃣ Нажмите на кнопку \"🌐 Скачать приложение\"\n\n2️⃣ Как приложение будет скачано — кликайте на кнопку \"✅ Сделано\""
-)
-
-
 @router.callback_query(F.data == "connect_windows")
 async def on_connect_windows(cb: CallbackQuery):
-    await cb.message.edit_text(WIN_STEP2_TEXT, reply_markup=_step2_kb("https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe", "windows_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "windows_step2")
-async def on_windows_step2(cb: CallbackQuery):
-    await cb.message.edit_text(WIN_STEP2_TEXT, reply_markup=_step2_kb("https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe", "windows_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "windows_step3")
-async def on_windows_step3(cb: CallbackQuery):
-    user_data = await db.get_user(cb.from_user.id)
-    if not user_data.get("trial_used", 0):
-        await db.activate_trial(cb.from_user.id)
-
-    key = await get_or_create_subscription_link(cb.from_user.id)
-    text = (
-        "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
-        "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
-        f"Ваш ключ-ссылка:\n<blockquote><code>{key}</code></blockquote>"
+    await _show_step2(
+        cb,
+        app_url="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe",
     )
-    await cb.message.edit_text(text, reply_markup=_step3_kb(key, "windows_done", "windows_step2"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "windows_done")
-async def on_windows_done(cb: CallbackQuery):
-    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
-    await cb.answer()
 
 
 # --- MACOS ---
-MAC_STEP2_TEXT = (
-    "Установка подписки. 🏁 <b>Шаг 2 из 3</b>\n\nСкачайте и установите приложение для VPN-подключения ⤵️\n\n"
-    "1️⃣ Нажмите на кнопку \"🌐 Скачать приложение\"\n\n2️⃣ Как приложение будет скачано — кликайте на кнопку \"✅ Сделано\"\n\n"
-    "Если приложение по кнопке ниже недоступно, нажмите сюда 👉 "
-    '<a href="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215">Happ Global</a>'
-)
-
-
 @router.callback_query(F.data == "connect_macos")
 async def on_connect_macos(cb: CallbackQuery):
-    await cb.message.edit_text(MAC_STEP2_TEXT, reply_markup=_step2_kb("https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973", "macos_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "macos_step2")
-async def on_macos_step2(cb: CallbackQuery):
-    await cb.message.edit_text(MAC_STEP2_TEXT, reply_markup=_step2_kb("https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973", "macos_step3"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "macos_step3")
-async def on_macos_step3(cb: CallbackQuery):
-    user_data = await db.get_user(cb.from_user.id)
-    if not user_data.get("trial_used", 0):
-        await db.activate_trial(cb.from_user.id)
-
-    key = await get_or_create_subscription_link(cb.from_user.id)
-    text = (
-        "Установка подписки. 🏁 <b>Шаг 3 из 3</b>\n\n"
-        "Вставьте свою ключ-ссылку в приложение, нажав на кнопку \"📌 Добавить подписку\" ⤵️\n\n"
-        f"Ваш ключ-ссылка:\n<blockquote><code>{key}</code></blockquote>"
+    await _show_step2(
+        cb,
+        app_url="https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973",
+        fallback_html='<a href="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215">Happ Global</a>',
     )
-    await cb.message.edit_text(text, reply_markup=_step3_kb(key, "macos_done", "macos_step2"), parse_mode="HTML")
-    await cb.answer()
-
-
-@router.callback_query(F.data == "macos_done")
-async def on_macos_done(cb: CallbackQuery):
-    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
-    await cb.answer()
 
 
 # --- ANDROID TV ---
-
 @router.callback_query(F.data == "connect_android_tv")
 async def on_connect_android_tv(cb: CallbackQuery):
-    # Активируем триал при выборе Android TV
     user_data = await db.get_user(cb.from_user.id)
     if not user_data.get("trial_used", 0):
         await db.activate_trial(cb.from_user.id)
-    
     await cb.message.edit_text(
         "Нажмите на кнопку ниже и следуйте инструкции 👇",
         reply_markup=_tv_step2_kb(), parse_mode="HTML",
     )
+    await cb.answer()
+
+
+# --- ОБЩИЙ ОБРАБОТЧИК «СДЕЛАНО» (замена всех *_done) ---
+@router.callback_query(F.data == "setup_done")
+async def on_setup_done(cb: CallbackQuery):
+    await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
     await cb.answer()
 
 
@@ -873,37 +673,21 @@ async def on_android_tv_done(cb: CallbackQuery):
 
 @router.message(Command("privacy"))
 async def cmd_privacy(message: Message):
-    """Политика конфиденциальности."""
     await message.answer(
-        "🔒 <b>Политика конфиденциальности</b>\n\n"
-        "Ознакомьтесь с документом по ссылке ниже:",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="📄 Читать политику",
-                    url="https://telegra.ph/Politika-konfidencialnosti-06-21-31"
-                )],
-            ]
-        ),
-        parse_mode="HTML",
+        "🔒 <b>Политика конфиденциальности</b>\n\nОзнакомьтесь с документом по ссылке ниже:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📄 Читать политику", url="https://telegra.ph/Politika-konfidencialnosti-06-21-31")],
+        ]), parse_mode="HTML",
     )
 
 
 @router.message(Command("agreement"))
 async def cmd_agreement(message: Message):
-    """Пользовательское соглашение."""
     await message.answer(
-        "📜 <b>Пользовательское соглашение</b>\n\n"
-        "Ознакомьтесь с документом по ссылке ниже:",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="📄 Читать соглашение",
-                    url="https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19"
-                )],
-            ]
-        ),
-        parse_mode="HTML",
+        "📜 <b>Пользовательское соглашение</b>\n\nОзнакомьтесь с документом по ссылке ниже:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📄 Читать соглашение", url="https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19")],
+        ]), parse_mode="HTML",
     )
 
 
@@ -915,11 +699,9 @@ async def main():
     dp.include_router(router)
     dp.include_router(admin_router)
     await bot.delete_webhook(drop_pending_updates=True)
-
-    # Запускаем сервер приёма callback'ов от Platega параллельно с polling
     await run_webhook_server(bot)
-
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     try:
