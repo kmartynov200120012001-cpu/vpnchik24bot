@@ -26,6 +26,7 @@ from admin import admin_router
 from payments import create_payment
 from webhook import run_webhook_server
 from xui_client import xui
+from aiogram.types import LinkPreviewOptions
 
 # --- Логирование ---
 logging.basicConfig(
@@ -639,7 +640,7 @@ async def on_connect_android(cb: CallbackQuery):
         f'<a href="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk"><b>скачайте APK</b></a>'
         f"\n\n"
         f"3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\"\n\n"
-        f"4️⃣ Включите VPN."
+        f"4️⃣ Включите VPN"
     )
 
     await cb.message.edit_text(text, reply_markup=_android_instruction_kb(), parse_mode="HTML")
@@ -663,10 +664,10 @@ async def on_connect_ios(cb: CallbackQuery):
         f'<a href="https://apps.apple.com/ru/app/incy/id6756943388"><b>App Store</b></a>'
         f"\n\n"
         f"3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\"\n\n"
-        f"4️⃣ Включите VPN."
+        f"4️⃣ Включите VPN"
     )
 
-    await cb.message.edit_text(text, reply_markup=_ios_instruction_kb(), parse_mode="HTML")
+    await cb.message.edit_text(text, reply_markup=_ios_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
     await cb.answer()
 
 
