@@ -332,7 +332,7 @@ def get_paid_profile_text(user: dict) -> str:
             text = (
                 f"🟢 <b>VPN работает</b>\n\n"
                 f"<blockquote><b>❗Подписка истекает через:</b>\n"
-                f"<i>{time_left_text}</i></blockquote>\n\n"
+                f"<i>     {time_left_text}</i></blockquote>\n\n"
                 f"💎 Продлите заранее, чтобы не потерять доступ\n\n"
                 f"🔑 <b>Ваш VPN-ключ:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
