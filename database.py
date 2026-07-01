@@ -61,6 +61,21 @@ class Database:
             )
             await db.commit()
 
+            # --- Таблица начислений реферальных бонусов ---
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS referral_bonuses (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    transaction_id  TEXT NOT NULL,
+                    referrer_id     INTEGER NOT NULL,
+                    referral_id     INTEGER NOT NULL,
+                    days_awarded    INTEGER NOT NULL,
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            await db.commit()
+
     async def add_user(
         self, user_id: int, username: str, full_name: str, referrer_id: int | None = None
     ) -> bool:
@@ -183,6 +198,15 @@ class Database:
 
     # ==================== РЕФЕРАЛЫ ====================
 
+    async def get_referrer_id(self, user_id: int) -> int | None:
+        """Возвращает referrer_id пользователя (того, кто его пригласил), либо None."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT referrer_id FROM users WHERE user_id = ?", (user_id,)
+            )
+            row = await cursor.fetchone()
+            return row[0] if row and row[0] else None
+
     async def get_referrals_count(self, user_id: int) -> int:
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
@@ -241,6 +265,39 @@ class Database:
                 (status, transaction_id),
             )
             await db.commit()
+
+    # ==================== РЕФЕРАЛЬНЫЕ БОНУСЫ ====================
+
+    async def has_referral_bonus_for_transaction(self, transaction_id: str) -> bool:
+        """Защита от повторного начисления — Platega может присылать callback несколько раз."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT 1 FROM referral_bonuses WHERE transaction_id = ?", (transaction_id,)
+            )
+            row = await cursor.fetchone()
+            return row is not None
+
+    async def record_referral_bonus(
+        self, transaction_id: str, referrer_id: int, referral_id: int, days_awarded: int
+    ) -> None:
+        """Записывает факт начисления бонуса рефереру за оплату его реферала."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "INSERT INTO referral_bonuses "
+                "(transaction_id, referrer_id, referral_id, days_awarded) VALUES (?, ?, ?, ?)",
+                (transaction_id, referrer_id, referral_id, days_awarded),
+            )
+            await db.commit()
+
+    async def get_referral_bonus_days_total(self, referrer_id: int) -> int:
+        """Суммарное количество бонусных дней, начисленных рефереру за всё время."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT COALESCE(SUM(days_awarded), 0) FROM referral_bonuses WHERE referrer_id = ?",
+                (referrer_id,),
+            )
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
     # ==================== АДМИН-МЕТОДЫ ====================
 
