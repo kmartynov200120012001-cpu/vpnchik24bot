@@ -281,16 +281,29 @@ def get_paid_profile_text(user: dict) -> str:
     try:
         ends_at = datetime.fromisoformat(ends_at_str)
         now = datetime.now()
+        
+        # Корректировка времени: +1 час для отображения МСК
+        display_end_time = ends_at + timedelta(hours=1)
+        
         delta = ends_at - now
 
         if delta.total_seconds() <= 0:
             return get_profile_text(user)
 
-        # Расчет оставшегося времени
+        # Форматируем дату окончания (с учетом +1 часа)
+        end_date_fmt = display_end_time.strftime("%d %B %Y, %H:%M (МСК)")
+        months_ru = {
+            "January": "января", "February": "февраля", "March": "марта", "April": "апреля",
+            "May": "мая", "June": "июня", "July": "июля", "August": "августа",
+            "September": "сентября", "October": "октября", "November": "ноября", "December": "декабря"
+        }
+        for eng, ru in months_ru.items():
+            end_date_fmt = end_date_fmt.replace(eng, ru)
+
         days_left = delta.days
         hours_left = delta.seconds // 3600
         
-        # Форматирование времени (склонение)
+        # Форматирование времени для варианта "< 3 дней"
         if days_left > 0:
             day_word = "день" if days_left == 1 else "дня" if days_left < 5 else "дней"
             hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
@@ -303,14 +316,14 @@ def get_paid_profile_text(user: dict) -> str:
             # Вариант 1: Больше 3 дней (НОВЫЙ ТЕКСТ)
             text = (
                 f"🟢 <b>VPN работает</b>\n\n"
-                f"<blockquote>До 5 устройств\n"
-                f"Осталось: {time_left_text}</blockquote>\n\n"
+                f"<blockquote><b>Активен до:</b>\n"
+                f"<a>{end_date_fmt}</a></blockquote>\n\n"
                 f"💎 Продлить доступ можно в любой момент\n\n"
                 f"🔑 <b>Ваш ключ доступа:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
         else:
-            # Вариант 2: 3 дня и меньше (старый текст с предупреждением)
+            # Вариант 2: 3 дня и меньше (старый текст с предупреждением, но с новой датой)
             text = (
                 f"🟡 <b>VPN подключен</b>\n\n"
                 f"Подписка скоро закончится ⏳\n"
