@@ -11,7 +11,7 @@ import logging
 
 from aiohttp import web
 
-from config import PLATEGA_MERCHANT_ID, PLATEGA_API_KEY, PLATEGA_CALLBACK_PATH, WEBHOOK_PORT
+from config import PLATEGA_MERCHANT_ID, PLATEGA_API_KEY, PLATEGA_CALLBACK_PATH, WEBHOOK_PORT, REFERRAL_BONUS_DAYS
 from database import db
 from xui_client import xui
 
@@ -53,6 +53,7 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
     if status == "CONFIRMED":
         user_id = tx["user_id"]
         days = tx["days"]
+        tariff_callback = tx["tariff_callback"]
         await db.activate_subscription(user_id, days)
         logging.info(f"Подписка пользователя {user_id} продлена на {days} дней (tx={transaction_id})")
 
@@ -69,8 +70,51 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
             # Подписка в нашей БД уже продлена — пользователь не останется без доступа полностью,
             # но стоит проверить вручную через админку при возникновении такой ошибки в логах.
 
-        # Уведомляем пользователя в Telegram об успешной оплате
         bot = request.app["bot"]
+
+        # --- Реферальный бонус: +REFERRAL_BONUS_DAYS рефереру за каждую оплату/продление
+        # реферала, кроме 1-дневного тарифа (tariff_1d не считается). Защищено от
+        # повторного начисления по transaction_id, на случай дублирующего callback.
+        if tariff_callback != "tariff_1d":
+            already_awarded = await db.has_referral_bonus_for_transaction(transaction_id)
+            if not already_awarded:
+                referrer_id = await db.get_referrer_id(user_id)
+                if referrer_id:
+                    await db.activate_subscription(referrer_id, REFERRAL_BONUS_DAYS)
+                    await db.record_referral_bonus(transaction_id, referrer_id, user_id, REFERRAL_BONUS_DAYS)
+                    logging.info(
+                        f"Реферальный бонус: рефереру {referrer_id} начислено "
+                        f"{REFERRAL_BONUS_DAYS} дн. за оплату реферала {user_id} (tx={transaction_id})"
+                    )
+
+                    try:
+                        ref_email, ref_sub_id = await db.get_xui_client(referrer_id)
+                        if ref_email:
+                            await xui.update_client_expiry(ref_email, REFERRAL_BONUS_DAYS, extend=True)
+                        else:
+                            ref_result = await xui.add_client(user_id=referrer_id, days=REFERRAL_BONUS_DAYS)
+                            await db.save_xui_client(referrer_id, ref_result["email"], ref_result["sub_id"])
+                    except Exception as e:
+                        logging.error(
+                            f"Не удалось продлить 3x-ui клиента рефереру {referrer_id} "
+                            f"за бонус (tx={transaction_id}): {e}"
+                        )
+
+                    try:
+                        await bot.send_message(
+                            chat_id=referrer_id,
+                            text=(
+                                "🎁 <b>Реферальный бонус!</b>\n\n"
+                                f"Ваш друг оплатил подписку — вам начислено "
+                                f"<b>+{REFERRAL_BONUS_DAYS} дней</b> VPN.\n"
+                                "Спасибо, что приглашаете друзей! 🫂"
+                            ),
+                            parse_mode="HTML",
+                        )
+                    except Exception as e:
+                        logging.error(f"Не удалось отправить уведомление о бонусе рефереру {referrer_id}: {e}")
+
+        # Уведомляем покупателя в Telegram об успешной оплате
         try:
             await bot.send_message(
                 chat_id=user_id,
