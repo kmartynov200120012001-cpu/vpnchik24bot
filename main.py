@@ -286,42 +286,31 @@ def get_paid_profile_text(user: dict) -> str:
         if delta.total_seconds() <= 0:
             return get_profile_text(user)
 
-        # Форматируем дату окончания
-        end_date_fmt = ends_at.strftime("%d %B %Y, %H:%M")
-        months_ru = {
-            "January": "января", "February": "февраля", "March": "марта", "April": "апреля",
-            "May": "мая", "June": "июня", "July": "июля", "August": "августа",
-            "September": "сентября", "October": "октября", "November": "ноября", "December": "декабря"
-        }
-        for eng, ru in months_ru.items():
-            end_date_fmt = end_date_fmt.replace(eng, ru)
-
-        # Расчет оставшегося времени для условия (> 3 дней или <= 3 дней)
+        # Расчет оставшегося времени
         days_left = delta.days
+        hours_left = delta.seconds // 3600
         
+        # Форматирование времени (склонение)
+        if days_left > 0:
+            day_word = "день" if days_left == 1 else "дня" if days_left < 5 else "дней"
+            hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
+            time_left_text = f"{days_left} {day_word} {hours_left} {hour_word}"
+        else:
+            hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
+            time_left_text = f"{hours_left} {hour_word}"
+
         if days_left > 3:
             # Вариант 1: Больше 3 дней (НОВЫЙ ТЕКСТ)
             text = (
                 f"🟢 <b>VPN работает</b>\n\n"
-                f"<blockquote><b>Подписка активна до:</b>\n"
-                f"<a>{end_date_fmt} (МСК)</a></blockquote>\n\n"
+                f"<blockquote>До 5 устройств\n"
+                f"Осталось: {time_left_text}</blockquote>\n\n"
                 f"💎 Продлить доступ можно в любой момент\n\n"
                 f"🔑 <b>Ваш ключ доступа:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
         else:
             # Вариант 2: 3 дня и меньше (старый текст с предупреждением)
-            hours_left = delta.seconds // 3600
-            
-            # Склонение времени
-            if days_left > 0:
-                day_word = "день" if days_left == 1 else "дня" if days_left < 5 else "дней"
-                hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
-                time_left_text = f"{days_left} {day_word} {hours_left} {hour_word}"
-            else:
-                hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
-                time_left_text = f"{hours_left} {hour_word}"
-
             text = (
                 f"🟡 <b>VPN подключен</b>\n\n"
                 f"Подписка скоро закончится ⏳\n"
