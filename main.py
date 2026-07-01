@@ -291,19 +291,24 @@ def get_paid_profile_text(user: dict) -> str:
             return get_profile_text(user)
 
         # Форматируем дату окончания (с учетом +1 часа)
-        end_date_fmt = display_end_time.strftime("%d %B %Y, %H:%M (МСК)")
+        # Для варианта > 3 дней: полная дата
+        end_date_full = display_end_time.strftime("%d %B %Y, %H:%M (МСК)")
+        # Для варианта <= 3 дней: короткая дата (день месяца и время)
+        end_date_short = display_end_time.strftime("%d %B в %H:%M")
+        
         months_ru = {
             "January": "января", "February": "февраля", "March": "марта", "April": "апреля",
             "May": "мая", "June": "июня", "July": "июля", "August": "августа",
             "September": "сентября", "October": "октября", "November": "ноября", "December": "декабря"
         }
         for eng, ru in months_ru.items():
-            end_date_fmt = end_date_fmt.replace(eng, ru)
+            end_date_full = end_date_full.replace(eng, ru)
+            end_date_short = end_date_short.replace(eng, ru)
 
         days_left = delta.days
         hours_left = delta.seconds // 3600
         
-        # Форматирование времени для варианта "< 3 дней"
+        # Форматирование времени для варианта "< 3 дней" (если нужно будет вернуть обратный отсчет)
         if days_left > 0:
             day_word = "день" if days_left == 1 else "дня" if days_left < 5 else "дней"
             hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
@@ -317,7 +322,7 @@ def get_paid_profile_text(user: dict) -> str:
             text = (
                 f"🟢 <b>VPN работает</b>\n\n"
                 f"<blockquote><b>Активен до:</b>\n"
-                f"<a>{end_date_fmt}</a></blockquote>\n\n"
+                f"<a>{end_date_full}</a></blockquote>\n\n"
                 f"💎 Продлить доступ можно в любой момент\n\n"
                 f"🔑 <b>Ваш ключ доступа:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
@@ -326,8 +331,9 @@ def get_paid_profile_text(user: dict) -> str:
             # Вариант 2: 3 дня и меньше (НОВЫЙ ТЕКСТ)
             text = (
                 f"🟡 <b>VPN работает</b>\n\n"
-                f"⏳ <b>Подписка заканчивается через {time_left_text}</b>\n\n"
-                f"💎 Не забудьте продлить заранее\n\n"
+                f"⏳ <blockquote><b>Подписка истекает:</b>\n"
+                f"<i>{end_date_short}</i></blockquote>\n\n"
+                f"💎 Продлите заранее, чтобы не потерять доступ.\n\n"
                 f"🔑 <b>Ваш VPN-ключ:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
@@ -337,7 +343,6 @@ def get_paid_profile_text(user: dict) -> str:
         return get_profile_text(user)
 
     return text
-
 
 def get_profile_text(user: dict) -> str:
     code, _, _ = get_subscription_status(user)
