@@ -265,8 +265,11 @@ def get_welcome_text(name: str) -> str:
 
 
 def get_paid_profile_text(user: dict) -> str:
+    """Текст профиля для активной платной подписки (2 варианта)."""
     ends_at_str = user.get("subscription_ends_at")
     sub_id = user.get("xui_sub_id")
+    
+    # Получаем реальную ссылку из xui или плейсхолдер
     if sub_id:
         key_link = xui.build_subscription_url(sub_id)
     else:
@@ -283,35 +286,31 @@ def get_paid_profile_text(user: dict) -> str:
         if delta.total_seconds() <= 0:
             return get_profile_text(user)
 
-        end_date_fmt = ends_at.strftime("%d %B %Y, %H:%M")
-        months_ru = {
-            "January": "января", "February": "февраля", "March": "марта", "April": "апреля",
-            "May": "мая", "June": "июня", "July": "июля", "August": "августа",
-            "September": "сентября", "October": "октября", "November": "ноября", "December": "декабря"
-        }
-        for eng, ru in months_ru.items():
-            end_date_fmt = end_date_fmt.replace(eng, ru)
-
+        # Расчет оставшегося времени
         days_left = delta.days
         hours_left = delta.seconds // 3600
+        
+        # Форматирование времени (склонение)
+        if days_left > 0:
+            day_word = "день" if days_left == 1 else "дня" if days_left < 5 else "дней"
+            hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
+            time_left_text = f"{days_left} {day_word} {hours_left} {hour_word}"
+        else:
+            hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
+            time_left_text = f"{hours_left} {hour_word}"
 
         if days_left > 3:
+            # Вариант 1: Больше 3 дней (НОВЫЙ ТЕКСТ)
             text = (
-                f"🟢 <b>VPN подключен</b>\n\n"
-                f"<b>Подписка действует до</b> <i>{end_date_fmt}</i>\n\n"
-                f"Продлить доступ можно в любой момент – без потери текущего периода\n\n"
+                f"🟢 <b>VPN работает</b>\n\n"
+                f"<blockquote>До 5 устройств\n"
+                f"Осталось: {time_left_text}</blockquote>\n\n"
+                f"💎 Продлить доступ можно в любой момент\n\n"
                 f"🔑 <b>Ваш ключ доступа:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
         else:
-            if days_left > 0:
-                day_word = "день" if days_left == 1 else "дня" if days_left < 5 else "дней"
-                hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
-                time_left_text = f"{days_left} {day_word} {hours_left} {hour_word}"
-            else:
-                hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
-                time_left_text = f"{hours_left} {hour_word}"
-
+            # Вариант 2: 3 дня и меньше (старый текст с предупреждением)
             text = (
                 f"🟡 <b>VPN подключен</b>\n\n"
                 f"Подписка скоро закончится ⏳\n"
@@ -320,6 +319,7 @@ def get_paid_profile_text(user: dict) -> str:
                 f"🔑 <b>Ваш ключ доступа:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
+            
     except Exception as e:
         logging.error(f"Error formatting paid profile: {e}")
         return get_profile_text(user)
