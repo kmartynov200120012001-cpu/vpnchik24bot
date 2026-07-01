@@ -313,23 +313,22 @@ def get_paid_profile_text(user: dict) -> str:
             time_left_text = f"{hours_left} {hour_word}"
 
         if days_left > 3:
-            # Вариант 1: Больше 3 дней (НОВЫЙ ТЕКСТ)
+            # Вариант 1: Больше 3 дней
             text = (
                 f"🟢 <b>VPN работает</b>\n\n"
                 f"<blockquote><b>Активен до:</b>\n"
-                f"{end_date_fmt}</blockquote>\n\n"
+                f"<a>{end_date_fmt}</a></blockquote>\n\n"
                 f"💎 Продлить доступ можно в любой момент\n\n"
                 f"🔑 <b>Ваш ключ доступа:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
         else:
-            # Вариант 2: 3 дня и меньше (старый текст с предупреждением, но с новой датой)
+            # Вариант 2: 3 дня и меньше (НОВЫЙ ТЕКСТ)
             text = (
-                f"🟡 <b>VPN подключен</b>\n\n"
-                f"Подписка скоро закончится ⏳\n"
-                f"<b>Осталось:</b> <i>{time_left_text}</i>\n\n"
-                f"Продлите заранее, чтобы не потерять доступ к VPN\n\n"
-                f"🔑 <b>Ваш ключ доступа:</b>\n"
+                f"🟡 <b>VPN работает</b>\n\n"
+                f"⏳ <b>Подписка заканчивается через {time_left_text}</b>\n\n"
+                f"💎 Не забудьте продлить заранее\n\n"
+                f"🔑 <b>Ваш VPN-ключ:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
             
