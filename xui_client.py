@@ -290,6 +290,37 @@ class XUIClient:
             raise RuntimeError(f"3x-ui set_client_flow failed: {data}")
         logging.info(f"3x-ui: клиенту {email} установлен flow={flow}")
 
+    async def expire_client(self, email: str) -> None:
+        """
+        Немедленно завершает доступ клиента, не удаляя его из панели —
+        выставляет expiryTime в прошлое (1 секунда назад) и отключает enable.
+        Используется в админке для кнопки "Завершить подписку": пользователь
+        теряет доступ сразу, но его запись/статистика трафика сохраняется,
+        и клиента можно будет снова продлить в будущем через update_client_expiry.
+        """
+        current = await self.get_client(email)
+        if current is None:
+            raise RuntimeError(f"3x-ui: клиент с email {email} не найден")
+
+        import time
+        expired_ms = int(time.time() * 1000) - 1000  # 1 секунда назад
+
+        payload = {
+            "email": current["email"],
+            "subId": current.get("subId", ""),
+            "flow": current.get("flow", "xtls-rprx-vision"),
+            "limitIp": current.get("limitIp", 0),
+            "totalGB": current.get("totalGB", 0),
+            "expiryTime": expired_ms,
+            "tgId": current.get("tgId", 0),
+            "enable": False,
+        }
+
+        data = await self._request("POST", f"/panel/api/clients/update/{email}", json=payload)
+        if not data.get("success", False):
+            raise RuntimeError(f"3x-ui expire_client failed: {data}")
+        logging.info(f"3x-ui: клиент {email} принудительно завершён (expiryTime={expired_ms}, enable=False)")
+
     async def delete_client(self, email: str) -> None:
         """Удаляет клиента — например, при полном сбросе пользователя в админке."""
         data = await self._request("POST", f"/panel/api/clients/del/{email}")
