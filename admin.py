@@ -485,6 +485,14 @@ async def on_sub_end(callback: CallbackQuery):
     user_id = int(callback.data.split("_")[-1])
     await db.end_subscription(user_id)
 
+    # Завершаем и реальный VPN-доступ в 3x-ui (не удаляя клиента — просто блокируем)
+    try:
+        email, sub_id = await db.get_xui_client(user_id)
+        if email:
+            await xui.expire_client(email)
+    except Exception as e:
+        logging.error(f"Не удалось завершить 3x-ui клиента для {user_id} (admin sub_end): {e}")
+
     user = await db.get_user(user_id)
     name = user.get("full_name") or "—"
 
