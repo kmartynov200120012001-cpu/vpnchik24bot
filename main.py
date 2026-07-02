@@ -803,6 +803,10 @@ async def cmd_privacy(message: Message):
             [InlineKeyboardButton(text="📄 Читать политику", url="https://telegra.ph/Politika-konfidencialnosti-06-21-31")],
         ]), parse_mode="HTML",
     )
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass
 
 
 @router.message(Command("agreement"))
@@ -813,6 +817,10 @@ async def cmd_agreement(message: Message):
             [InlineKeyboardButton(text="📄 Читать соглашение", url="https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19")],
         ]), parse_mode="HTML",
     )
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass
 
 
 # Ловит абсолютно любое сообщение от пользователя, не пойманное хендлерами выше
@@ -832,8 +840,8 @@ async def delete_any_other_message(message: Message):
 async def main():
     await db.init()
     logging.info("База данных инициализирована")
-    dp.include_router(router)
     dp.include_router(admin_router)
+    dp.include_router(router)
     await bot.delete_webhook(drop_pending_updates=True)
     await run_webhook_server(bot)
     await dp.start_polling(bot)
