@@ -407,7 +407,9 @@ async def delete_old_menu(bot: Bot, chat_id: int, user_id: int) -> None:
             pass
 
 
-async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bool = False) -> None:
+async def send_main_menu(
+    bot: Bot, chat_id: int, user_id: int, is_activation: bool = False, force_recreate: bool = False
+) -> None:
     user_data = await db.get_user(user_id)
     code, _, _ = get_subscription_status(user_data)
 
@@ -443,9 +445,6 @@ async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bo
         await db.save_menu_message_id(user_id, sent.message_id)
         return
 
-    # Все остальные случаи — обычный текстовый экран (триал без анимации, активная
-    # подписка, истёкшая/новая-без-триала подписка). Пробуем отредактировать
-    # существующее меню-сообщение на месте, чтобы не было "мигания" удаление+отправка.
     if code == "trial_active":
         sub_id = user_data.get("xui_sub_id")
         key_link = xui.build_subscription_url(sub_id) if sub_id else "⚠️ Ключ ещё не создан"
@@ -455,6 +454,17 @@ async def send_main_menu(bot: Bot, chat_id: int, user_id: int, is_activation: bo
         text = get_profile_text(user_data)
         keyboard = get_keyboard_for_user(user_data)
 
+    # force_recreate=True (например, при команде /start) — всегда удаляем старое
+    # сообщение и создаём новое, без попытки редактирования на месте.
+    if force_recreate:
+        await delete_old_menu(bot, chat_id, user_id)
+        sent = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="HTML")
+        await db.save_menu_message_id(user_id, sent.message_id)
+        return
+
+    # Обычные переходы между текстовыми экранами (например, кнопка "Главное меню") —
+    # пробуем отредактировать существующее меню-сообщение на месте, чтобы не было
+    # "мигания" от удаления и повторной отправки.
     old_id = await db.get_menu_message_id(user_id)
     if old_id:
         try:
@@ -489,7 +499,11 @@ async def cmd_start(message: Message):
         except (ValueError, IndexError):
             pass
     await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name, referrer_id)
-    await send_main_menu(bot, message.chat.id, message.from_user.id, is_activation=False)
+    await send_main_menu(bot, message.chat.id, message.from_user.id, is_activation=False, force_recreate=True)
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass
 
 
 @router.callback_query(F.data == "free_trial")
@@ -799,6 +813,18 @@ async def cmd_agreement(message: Message):
             [InlineKeyboardButton(text="📄 Читать соглашение", url="https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19")],
         ]), parse_mode="HTML",
     )
+
+
+# Ловит абсолютно любое сообщение от пользователя, не пойманное хендлерами выше
+# (обычный текст, стикеры, фото, голосовые и т.д.) и сразу удаляет его — интерфейс
+# остаётся чистым, пользователь управляет ботом только через inline-кнопки.
+# Должен оставаться последним зарегистрированным @router.message в файле.
+@router.message()
+async def delete_any_other_message(message: Message):
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass
 
 
 # ==================== ТОЧКА ВХОДА ====================
