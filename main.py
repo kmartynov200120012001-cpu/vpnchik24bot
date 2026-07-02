@@ -265,8 +265,11 @@ def get_welcome_text(name: str) -> str:
 
 
 def get_paid_profile_text(user: dict) -> str:
+    """Текст профиля для активной платной подписки (2 варианта)."""
     ends_at_str = user.get("subscription_ends_at")
     sub_id = user.get("xui_sub_id")
+    
+    # Получаем реальную ссылку из xui или плейсхолдер
     if sub_id:
         key_link = xui.build_subscription_url(sub_id)
     else:
@@ -278,48 +281,63 @@ def get_paid_profile_text(user: dict) -> str:
     try:
         ends_at = datetime.fromisoformat(ends_at_str)
         now = datetime.now()
+        
+        # Корректировка времени: +1 час для отображения МСК
+        display_end_time = ends_at + timedelta(hours=1)
+        
         delta = ends_at - now
 
         if delta.total_seconds() <= 0:
             return get_profile_text(user)
 
-        end_date_fmt = ends_at.strftime("%d %B %Y, %H:%M")
+        # Форматируем дату окончания (с учетом +1 часа)
+        # Для варианта > 3 дней: полная дата
+        end_date_full = display_end_time.strftime("%d %B %Y, %H:%M (МСК)")
+        # Для варианта <= 3 дней: короткая дата (день месяца и время)
+        end_date_short = display_end_time.strftime("%d %B в %H:%M")
+        
         months_ru = {
             "January": "января", "February": "февраля", "March": "марта", "April": "апреля",
             "May": "мая", "June": "июня", "July": "июля", "August": "августа",
             "September": "сентября", "October": "октября", "November": "ноября", "December": "декабря"
         }
         for eng, ru in months_ru.items():
-            end_date_fmt = end_date_fmt.replace(eng, ru)
+            end_date_full = end_date_full.replace(eng, ru)
+            end_date_short = end_date_short.replace(eng, ru)
 
         days_left = delta.days
         hours_left = delta.seconds // 3600
+        
+        # Форматирование времени для варианта "< 3 дней" (если нужно будет вернуть обратный отсчет)
+        if days_left > 0:
+            day_word = "день" if days_left == 1 else "дня" if days_left < 5 else "дней"
+            hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
+            time_left_text = f"{days_left} {day_word} {hours_left} {hour_word}"
+        else:
+            hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
+            time_left_text = f"{hours_left} {hour_word}"
 
         if days_left > 3:
+            # Вариант 1: Больше 3 дней
             text = (
-                f"🟢 <b>VPN подключен</b>\n\n"
-                f"<b>Подписка действует до</b> <i>{end_date_fmt}</i>\n\n"
-                f"Продлить доступ можно в любой момент – без потери текущего периода\n\n"
-                f"🔑 <b>Ваш ключ доступа:</b>\n"
+                f"🟢 <b>VPN работает</b>\n\n"
+                f"<blockquote><b>Активен до:</b>\n"
+                f"<i>{end_date_full}</i></blockquote>\n\n"
+                f"💎 Продлить доступ можно в любой момент\n\n"
+                f"🔑 <b>Ваш VPN-ключ:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
         else:
-            if days_left > 0:
-                day_word = "день" if days_left == 1 else "дня" if days_left < 5 else "дней"
-                hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
-                time_left_text = f"{days_left} {day_word} {hours_left} {hour_word}"
-            else:
-                hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
-                time_left_text = f"{hours_left} {hour_word}"
-
+            # Вариант 2: 3 дня и меньше (НОВЫЙ ТЕКСТ)
             text = (
-                f"🟡 <b>VPN подключен</b>\n\n"
-                f"Подписка скоро закончится ⏳\n"
-                f"<b>Осталось:</b> <i>{time_left_text}</i>\n\n"
-                f"Продлите заранее, чтобы не потерять доступ к VPN\n\n"
-                f"🔑 <b>Ваш ключ доступа:</b>\n"
+                f"🟢 <b>VPN работает</b>\n\n"
+                f"<blockquote><b>❗Подписка истекает через:</b>\n"
+                f"     <i>{time_left_text}</i></blockquote>\n\n"
+                f"💎 Продлите заранее, чтобы не потерять доступ\n\n"
+                f"🔑 <b>Ваш VPN-ключ:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
             )
+            
     except Exception as e:
         logging.error(f"Error formatting paid profile: {e}")
         return get_profile_text(user)
