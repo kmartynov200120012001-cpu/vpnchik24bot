@@ -93,7 +93,7 @@ def get_main_keyboard_new_user() -> InlineKeyboardMarkup:
 def get_main_keyboard_before_activation() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
-        [InlineKeyboardButton(text="🫂 Получить месяц бесплатно", callback_data="referral")],
+        [InlineKeyboardButton(text="🫂 Пригласить друга (+10 дней)", callback_data="referral")],
         [InlineKeyboardButton(text="💬 Поддержка", callback_data="support")],
     ])
 
@@ -101,7 +101,7 @@ def get_main_keyboard_before_activation() -> InlineKeyboardMarkup:
 def get_main_keyboard_after_activation() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
-        [InlineKeyboardButton(text="🫂 Получить месяц бесплатно", callback_data="referral")],
+        [InlineKeyboardButton(text="🫂 Пригласить друга (+10 дней)", callback_data="referral")],
         [
             InlineKeyboardButton(text="📖 Инструкция", callback_data="connect_vpn"),
             InlineKeyboardButton(text="💬 Поддержка", callback_data="support"),
@@ -111,12 +111,10 @@ def get_main_keyboard_after_activation() -> InlineKeyboardMarkup:
 
 def get_trial_dynamic_keyboard(key_link: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Подключить VPN", callback_data="connect_vpn", style="primary")]
         [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
-        [InlineKeyboardButton(text="🫂 Пригласить друзей", callback_data="referral")],
-        [
-            InlineKeyboardButton(text="📖 Инструкция", callback_data="connect_vpn"),
-            InlineKeyboardButton(text="💬 Поддержка", callback_data="support"),
-        ],
+        [InlineKeyboardButton(text="🫂 Пригласить друга (+10 дней)", callback_data="referral")],
+        [InlineKeyboardButton(text="💬 Поддержка", callback_data="support"),],
     ])
 
 
