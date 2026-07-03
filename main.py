@@ -130,12 +130,12 @@ def get_referral_keyboard(ref_link: str, referrals_count: int) -> InlineKeyboard
     share_text = "Привет! Держи крутой VPN — первые 3 дня бесплатно 🎁\n"
     share_url = f"https://t.me/share/url?url={quote(ref_link)}&text={quote(share_text)}"
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 Скопировать ссылку", copy_text=CopyTextButton(text=ref_link))],
+        [InlineKeyboardButton(text="Скопировать ссылку", copy_text=CopyTextButton(text=ref_link))],
         [
-            InlineKeyboardButton(text="🔳 Получить QR-код", callback_data="get_qr_code"),
-            InlineKeyboardButton(text="📤 Пригласить друга", url=share_url),
+            InlineKeyboardButton(text="🧾 Получить QR-код", callback_data="get_qr_code"),
+            InlineKeyboardButton(text="📩 Пригласить друга", url=share_url),
         ],
-        [InlineKeyboardButton(text=f"👥 Мои рефералы ({referrals_count})", callback_data="my_referrals")],
+        [InlineKeyboardButton(text=f"🫂 Мои рефералы ({referrals_count})", callback_data="my_referrals")],
         [InlineKeyboardButton(text="← Главное меню", callback_data="back_to_menu")],
     ])
 
@@ -154,7 +154,7 @@ def get_device_keyboard() -> InlineKeyboardMarkup:
 # Клавиатура для инструкции Android
 def _android_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done", style="success")],
+        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done")],
         [InlineKeyboardButton(text="🆘 Нужна помощь", callback_data="support")],
         [
             InlineKeyboardButton(text="← Назад", callback_data="connect_vpn"),
@@ -166,7 +166,7 @@ def _android_instruction_kb() -> InlineKeyboardMarkup:
 # Клавиатура для инструкции iOS
 def _ios_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done", style="success")],
+        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done"],
         [InlineKeyboardButton(text="🆘 Нужна помощь", callback_data="support")],
         [
             InlineKeyboardButton(text="← Назад", callback_data="connect_vpn"),
@@ -178,7 +178,7 @@ def _ios_instruction_kb() -> InlineKeyboardMarkup:
 # Клавиатура для инструкции Windows
 def _windows_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done", style="success")],
+        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done"],
         [InlineKeyboardButton(text="🆘 Нужна помощь", callback_data="support")],
         [
             InlineKeyboardButton(text="← Назад", callback_data="connect_vpn"),
@@ -190,7 +190,7 @@ def _windows_instruction_kb() -> InlineKeyboardMarkup:
 # Клавиатура для инструкции macOS
 def _macos_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done", style="success")],
+        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done"],
         [InlineKeyboardButton(text="🆘 Нужна помощь", callback_data="support")],
         [
             InlineKeyboardButton(text="← Назад", callback_data="connect_vpn"),
@@ -726,13 +726,15 @@ async def on_connect_ios(cb: CallbackQuery):
 
     text = (
         f"<b>Инструкция для iPhone / iPad</b>\n\n"
-        f"1️⃣ Нажмите на ссылку, чтобы скопировать вашу подписку:\n"
+        f"1️⃣ <b>Нажмите на ссылку, чтобы скопировать вашу подписку:</b>\n"
         f"<blockquote><code>{key}</code></blockquote>\n\n"
-        f"2️⃣ Установите приложение <b>INCY</b> из "
+        f"2️⃣ <b>Установите приложение INCY из</b> "
         f'<a href="https://apps.apple.com/ru/app/incy/id6756943388"><b>App Store</b></a>'
         f"\n\n"
-        f"3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\"\n\n"
-        f"4️⃣ Включите VPN"
+        f"3️⃣ <b>Откройте приложение и нажмите "📄Вставить" внизу экрана"</b>\n\n"
+        f"4️⃣ <b>Включите VPN"</b>
+        f"\n\n"
+        f"Откройте приложение и подключитесь к серверу VPNchik24."
     )
 
     await cb.message.edit_text(text, reply_markup=_ios_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
