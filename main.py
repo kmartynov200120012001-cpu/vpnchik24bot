@@ -319,7 +319,8 @@ def get_paid_profile_text(user: dict) -> str:
             # Вариант 1: Больше 3 дней
             text = (
                 f"🟢 <b>VPN работает</b>\n\n"
-                f"<blockquote><b>Активен до:</b> <i>{end_date_full}</i></blockquote>\n\n"
+                f"<blockquote><b>Активен до:</b>\n"
+                f"<i>{end_date_full}</i></blockquote>\n\n"
                 f"💎 Продлить доступ можно в любой момент\n\n"
                 f"🔑 <b>Ваш VPN-ключ:</b>\n"
                 f"<code>{key_link}</code>"
@@ -332,7 +333,7 @@ def get_paid_profile_text(user: dict) -> str:
                 f"     <i>{time_left_text}</i></blockquote>\n\n"
                 f"💎 Продлите заранее, чтобы не потерять доступ\n\n"
                 f"🔑 <b>Ваш VPN-ключ:</b>\n"
-                f"<blockquote><code>{key_link}</code></blockquote>"
+                f"<code>{key_link}</code>"
             )
             
     except Exception as e:
@@ -391,8 +392,8 @@ def get_trial_welcome_text(user: dict, key_link: str) -> str:
         f"🟢 <b>VPN работает</b>\n\n"
         f"<blockquote><b>Осталось:</b> <i>{remaining_text}</i></blockquote>\n\n"
         f"💎 Продлить доступ можно в любой момент\n\n"
-        f"🔑 <b>Ваш ключ доступа:</b>\n"
-        f"<blockquote><code>{key_link}</code></blockquote>\n"
+        f"🔑 <b>Ваш VPN-ключ:</b>\n"
+        f"<code>{key_link}</code>\n"
     )
 
 
