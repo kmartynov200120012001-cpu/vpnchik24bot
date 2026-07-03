@@ -390,8 +390,7 @@ def get_trial_welcome_text(user: dict, key_link: str) -> str:
 
     return (
         f"🟢 <b>VPN работает</b>\n\n"
-        f"<blockquote>До 5 устройств\n"
-        f"<b>Осталось:</b> <i>{remaining_text}</i></blockquote>\n\n"
+        f"<blockquote><b>Осталось:</b> <i>{remaining_text}</i></blockquote>\n\n"
         f"💎 Продлить доступ можно в любой момент\n\n"
         f"🔑 <b>Ваш ключ доступа:</b>\n"
         f"<blockquote><code>{key_link}</code></blockquote>\n"
