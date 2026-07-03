@@ -754,8 +754,7 @@ async def on_connect_windows(cb: CallbackQuery):
         f"<code>{key}</code>\n\n"
         f'<b>2️⃣ <a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe">Скачайте</a> и установите приложение Happ</b>\n\n'
         f"<b>3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\".</b>\n\n"
-        f"4️⃣ <b>Подключение</b>\n\n"
-        f"Откройте приложение и подключитесь к серверу VPNchik24."
+        f"4️⃣ <b>Включите VPN</b>\n"
     )
 
     await cb.message.edit_text(text, reply_markup=_windows_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
@@ -779,8 +778,7 @@ async def on_connect_macos(cb: CallbackQuery):
         f'<a href="https://apps.apple.com/ru/app/incy/id6756943388"><b>App Store</b></a>'
         f"\n\n"
         f'3️⃣ <b>Откройте приложение и нажмите "📄Вставить" внизу экрана</b>\n\n'
-        f"4️⃣ <b>Подключение</b>\n\n"
-        f"Откройте приложение и подключитесь к серверу VPNchik24."
+        f"4️⃣ <b>Включите VPN</b>\n"
     )
 
     await cb.message.edit_text(text, reply_markup=_macos_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
