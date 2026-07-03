@@ -708,7 +708,8 @@ async def on_connect_android(cb: CallbackQuery):
         f'<a href="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk"><b>скачайте APK</b></a>'
         f"\n\n"
         f"3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\"\n\n"
-        f"4️⃣ Включите VPN"
+        f"4️⃣ <b>Подключение</b>\n\n"
+        f"Откройте приложение и подключитесь к серверу VPNchik24."
     )
 
     await cb.message.edit_text(text, reply_markup=_android_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
@@ -726,13 +727,13 @@ async def on_connect_ios(cb: CallbackQuery):
 
     text = (
         f"<b>Инструкция для iPhone / iPad</b>\n\n"
-        f"1️⃣ <b>Нажмите на ссылку, чтобы скопировать вашу подписку:</b>\n"
-        f"<blockquote><code>{key}</code></blockquote>\n\n"
+        f"1️⃣ <b>Нажмите на ссылку, чтобы скопировать вашу подписку:</b>\n\n"
+        f"<code>{key}</code>\n\n"
         f"2️⃣ <b>Установите приложение INCY из</b> "
         f'<a href="https://apps.apple.com/ru/app/incy/id6756943388"><b>App Store</b></a>'
         f"\n\n"
         f'3️⃣ <b>Откройте приложение и нажмите "📄Вставить" внизу экрана</b>\n\n'
-        f"4️⃣ <b>Включите VPN</b>\n\n"
+        f"4️⃣ <b>Подключение</b>\n\n"
         f"Откройте приложение и подключитесь к серверу VPNchik24."
     )
 
@@ -756,7 +757,8 @@ async def on_connect_windows(cb: CallbackQuery):
         f"<b>2️⃣ Скачайте и установите приложение Happ:</b>\n"
         f'<a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe">Скачать Happ</a>\n\n'
         f"<b>3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\".</b>\n\n"
-        f"<b>4️⃣ Включите VPN</b>"
+        f"4️⃣ <b>Подключение</b>\n\n"
+        f"Откройте приложение и подключитесь к серверу VPNchik24."
     )
 
     await cb.message.edit_text(text, reply_markup=_windows_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
@@ -779,7 +781,8 @@ async def on_connect_macos(cb: CallbackQuery):
         f"<b>2️⃣ Установите приложение INCY из App Store:</b>\n"
         f'<a href="https://apps.apple.com/ru/app/incy/id6756943388">Скачать INCY</a>\n\n'
         f"<b>3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\".</b>\n\n"
-        f"<b>4️⃣ Включите VPN</b>"
+        f"4️⃣ <b>Подключение</b>\n\n"
+        f"Откройте приложение и подключитесь к серверу VPNchik24."
     )
 
     await cb.message.edit_text(text, reply_markup=_macos_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
