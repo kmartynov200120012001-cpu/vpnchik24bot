@@ -707,7 +707,7 @@ async def on_connect_android(cb: CallbackQuery):
         f" <b>или</b> "
         f'<a href="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk"><b>скачайте APK</b></a>'
         f"\n\n"
-        f"3️⃣ <b>Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\</b>"\n\n"
+        f"3️⃣ <b>Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\"</b>\n\n"
         f"4️⃣ <b>Подключение</b>\n\n"
         f"Откройте приложение и подключитесь к серверу VPNchik24."
     )
