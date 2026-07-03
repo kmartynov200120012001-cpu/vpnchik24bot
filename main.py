@@ -754,7 +754,7 @@ async def on_connect_windows(cb: CallbackQuery):
         f"<b>Инструкция для Windows</b>\n\n"
         f"<b>1️⃣ Нажмите на ссылку, чтобы скопировать вашу подписку:</b>\n\n"
         f"<code>{key}</code>\n\n"
-        f"<b>2️⃣ <a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe">Скачайте</a> и установите приложение Happ</b>\n"
+        f'<b>2️⃣ <a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe">Скачайте</a> и установите приложение Happ</b>\n'
         f"<b>3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\".</b>\n\n"
         f"4️⃣ <b>Подключение</b>\n\n"
         f"Откройте приложение и подключитесь к серверу VPNchik24."
