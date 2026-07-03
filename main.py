@@ -100,7 +100,7 @@ def get_main_keyboard_before_activation() -> InlineKeyboardMarkup:
 
 def get_main_keyboard_after_activation() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
+        [InlineKeyboardButton(text="✅ Продлить подписку", callback_data="tariffs", style="success")],
         [InlineKeyboardButton(text="🫂 Пригласить друга (+10 дней)", callback_data="referral")],
         [
             InlineKeyboardButton(text="📖 Инструкция", callback_data="connect_vpn"),
@@ -321,7 +321,7 @@ def get_paid_profile_text(user: dict) -> str:
                 f"🟢 <b>VPN работает</b>\n\n"
                 f"<blockquote><b>Активен до:</b>\n"
                 f"<i>{end_date_full}</i></blockquote>\n\n"
-                f"💎 Продлить доступ можно в любой момент\n\n"
+                f"💎 Продлить подписку можно в любой момент\n\n"
                 f"🔑 <b>Ваш VPN-ключ:</b>\n"
                 f"<code>{key_link}</code>"
             )
@@ -331,7 +331,7 @@ def get_paid_profile_text(user: dict) -> str:
                 f"🟢 <b>VPN работает</b>\n\n"
                 f"<blockquote><b>❗Подписка истекает через:</b>\n"
                 f"     <i>{time_left_text}</i></blockquote>\n\n"
-                f"💎 Продлите заранее, чтобы не потерять доступ\n\n"
+                f"💎 Продлите подписку заранее, чтобы не потерять доступ\n\n"
                 f"🔑 <b>Ваш VPN-ключ:</b>\n"
                 f"<code>{key_link}</code>"
             )
