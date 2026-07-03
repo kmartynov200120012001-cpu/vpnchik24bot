@@ -319,8 +319,7 @@ def get_paid_profile_text(user: dict) -> str:
             # Вариант 1: Больше 3 дней
             text = (
                 f"🟢 <b>VPN работает</b>\n\n"
-                f"<blockquote><b>Активен до:</b>\n"
-                f"<i>{end_date_full}</i></blockquote>\n\n"
+                f"<blockquote><b>Активен до:</b> <i>{end_date_full}</i></blockquote>\n\n"
                 f"💎 Продлить доступ можно в любой момент\n\n"
                 f"🔑 <b>Ваш VPN-ключ:</b>\n"
                 f"<blockquote><code>{key_link}</code></blockquote>"
