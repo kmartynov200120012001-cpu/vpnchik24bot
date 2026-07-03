@@ -14,7 +14,11 @@ ADMIN_ID = 907393161  # ← ваш Telegram ID
 PROXY_URL = os.environ.get("PROXY_URL")  # None, если не задано — бот работает без прокси
 
 # База данных (SQLite, асинхронная)
-DB_PATH = "bot.db"
+# PostgreSQL: строка подключения задаётся через переменную окружения на сервере.
+# Формат: postgresql://user:password@host:port/database
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL", "postgresql://vpnchik_bot_user:CHANGE_ME@127.0.0.1:5432/vpnchik_bot"
+)
 
 # Настройки VPN
 FREE_TRIAL_DAYS = 3
