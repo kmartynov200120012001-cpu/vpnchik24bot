@@ -708,8 +708,7 @@ async def on_connect_android(cb: CallbackQuery):
         f'<a href="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk"><b>скачайте APK</b></a>'
         f"\n\n"
         f"3️⃣ <b>Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\"</b>\n\n"
-        f"4️⃣ <b>Подключение</b>\n\n"
-        f"Откройте приложение и подключитесь к серверу VPNchik24."
+        f"4️⃣ <b>Включите VPN</b>\n"
     )
 
     await cb.message.edit_text(text, reply_markup=_android_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
@@ -733,8 +732,7 @@ async def on_connect_ios(cb: CallbackQuery):
         f'<a href="https://apps.apple.com/ru/app/incy/id6756943388"><b>App Store</b></a>'
         f"\n\n"
         f'3️⃣ <b>Откройте приложение и нажмите "📄Вставить" внизу экрана</b>\n\n'
-        f"4️⃣ <b>Подключение</b>\n\n"
-        f"Откройте приложение и подключитесь к серверу VPNchik24."
+        f"4️⃣ <b>Включите VPN</b>\n"
     )
 
     await cb.message.edit_text(text, reply_markup=_ios_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
@@ -754,7 +752,7 @@ async def on_connect_windows(cb: CallbackQuery):
         f"<b>Инструкция для Windows</b>\n\n"
         f"<b>1️⃣ Нажмите на ссылку, чтобы скопировать вашу подписку:</b>\n\n"
         f"<code>{key}</code>\n\n"
-        f'<b>2️⃣ <a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe">Скачайте</a> и установите приложение Happ</b>\n'
+        f'<b>2️⃣ <a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe">Скачайте</a> и установите приложение Happ</b>\n\n'
         f"<b>3️⃣ Откройте приложение, нажмите ➕ в верхнем правом углу и выберите \"Добавить из буфера\".</b>\n\n"
         f"4️⃣ <b>Подключение</b>\n\n"
         f"Откройте приложение и подключитесь к серверу VPNchik24."
