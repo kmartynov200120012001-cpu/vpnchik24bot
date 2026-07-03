@@ -166,7 +166,7 @@ def _android_instruction_kb() -> InlineKeyboardMarkup:
 # Клавиатура для инструкции iOS
 def _ios_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done"],
+        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done")],
         [InlineKeyboardButton(text="🆘 Нужна помощь", callback_data="support")],
         [
             InlineKeyboardButton(text="← Назад", callback_data="connect_vpn"),
@@ -178,7 +178,7 @@ def _ios_instruction_kb() -> InlineKeyboardMarkup:
 # Клавиатура для инструкции Windows
 def _windows_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done"],
+        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done")],
         [InlineKeyboardButton(text="🆘 Нужна помощь", callback_data="support")],
         [
             InlineKeyboardButton(text="← Назад", callback_data="connect_vpn"),
@@ -190,7 +190,7 @@ def _windows_instruction_kb() -> InlineKeyboardMarkup:
 # Клавиатура для инструкции macOS
 def _macos_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done"],
+        [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done")],
         [InlineKeyboardButton(text="🆘 Нужна помощь", callback_data="support")],
         [
             InlineKeyboardButton(text="← Назад", callback_data="connect_vpn"),
