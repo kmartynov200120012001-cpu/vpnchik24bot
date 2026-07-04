@@ -10,7 +10,7 @@
 import logging
 
 from aiohttp import web
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 from config import PLATEGA_MERCHANT_ID, PLATEGA_API_KEY, PLATEGA_CALLBACK_PATH, WEBHOOK_PORT, REFERRAL_BONUS_DAYS
 from database import db
 from xui_client import xui
@@ -57,6 +57,14 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
         await db.activate_subscription(user_id, days)
         logging.info(f"Подписка пользователя {user_id} продлена на {days} дней (tx={transaction_id})")
 
+        try:
+            await db.log_event(
+                user_id, "payment_confirmed",
+                tariff_callback=tariff_callback, transaction_id=transaction_id,
+            )
+        except Exception as e:
+            logging.warning(f"Не удалось залогировать событие payment_confirmed для {user_id}: {e}")
+
         # Создаём или продлеваем реального VPN-клиента в 3x-ui
         try:
             email, sub_id = await db.get_xui_client(user_id)
@@ -101,9 +109,6 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
                         )
 
                     try:
-                        kb_bonus = InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="← Главное меню", callback_data="back_to_menu")]
-                        ])
                         await bot.send_message(
                             chat_id=referrer_id,
                             text=(
@@ -112,7 +117,6 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
                                 f"<b>+{REFERRAL_BONUS_DAYS} дней</b> VPN.\n"
                                 "Спасибо, что приглашаете друзей! 🫂"
                             ),
-                            reply_markup=kb_bonus,
                             parse_mode="HTML",
                         )
                     except Exception as e:
@@ -120,9 +124,6 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
 
         # Уведомляем покупателя в Telegram об успешной оплате
         try:
-            kb_main = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="← Главное меню", callback_data="back_to_menu")]
-            ])
             await bot.send_message(
                 chat_id=user_id,
                 text=(
@@ -130,7 +131,6 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
                     f"Ваша подписка продлена на {days} дн.\n"
                     "Зайдите в меню — ключ доступа уже обновлён."
                 ),
-                reply_markup=kb_main,
                 parse_mode="HTML",
             )
         except Exception as e:
