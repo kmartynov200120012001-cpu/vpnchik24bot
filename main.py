@@ -363,8 +363,9 @@ def get_profile_text(user: dict) -> str:
     status = status_map.get(code, "")
 
     return (
-        f"👤 <b>Профиль:</b>\n<blockquote>ID: <code>{uid}</code>\nИмя: {name}</blockquote>\n\n"
-        f"🎁 <b>Подписка:</b>\n<blockquote>Статус: {status}\n\n<i>{msg_short}</i></blockquote>"
+        f"🔴 VPN отключен\n\n"
+        f"Доступ к сервису приостановлен\n\n"
+        f"💎 Продлите подписку и пользуйтесь без ограничений (от 11 ₽/сутки)"
     )
 
 
