@@ -94,6 +94,27 @@ class Database:
                 """
             )
 
+            # --- Лог событий воронки конверсии (просмотр тарифов, клик, создание/подтверждение оплаты) ---
+            # Используется только для аналитики (выгрузка в Google Sheets), не читается ботом обратно.
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_events (
+                    id              SERIAL PRIMARY KEY,
+                    user_id         BIGINT NOT NULL,
+                    event_type      TEXT NOT NULL,
+                    tariff_callback TEXT,
+                    transaction_id  TEXT,
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_user_events_user_id ON user_events (user_id)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_user_events_created_at ON user_events (created_at)"
+            )
+
     async def add_user(
         self, user_id: int, username: str, full_name: str, referrer_id: int | None = None
     ) -> bool:
@@ -312,6 +333,30 @@ class Database:
                 referrer_id,
             )
             return value or 0
+
+    # ==================== ВОРОНКА КОНВЕРСИИ (ДЛЯ АНАЛИТИКИ / GOOGLE SHEETS) ====================
+
+    async def log_event(
+        self,
+        user_id: int,
+        event_type: str,
+        tariff_callback: str | None = None,
+        transaction_id: str | None = None,
+    ) -> None:
+        """
+        Записывает событие воронки: viewed_tariffs / clicked_tariff /
+        payment_created / payment_confirmed. Используется только для внешней
+        аналитики (синк в Google Sheets), бот эти данные обратно не читает —
+        поэтому не блокирует основной поток работы: ошибка здесь не должна
+        приводить к падению хендлера, вызывающий код оборачивает в try/except.
+        """
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO user_events (user_id, event_type, tariff_callback, transaction_id) "
+                "VALUES ($1, $2, $3, $4)",
+                user_id, event_type, tariff_callback, transaction_id,
+            )
 
     # ==================== АДМИН-МЕТОДЫ ====================
 
