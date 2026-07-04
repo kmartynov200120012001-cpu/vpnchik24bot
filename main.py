@@ -606,7 +606,8 @@ async def on_my_referrals(callback: CallbackQuery):
                 except Exception:
                     pass
             lines.append(f"<b>{i}.</b> {n} ({u}){d}")
-        lines.append(f"\n💎 <b>Всего бонусных дней начислено:</b> {len(refs) * 10}")
+        bonus_days_total = await db.get_referral_bonus_days_total(callback.from_user.id)
+        lines.append(f"\n💎 <b>Всего бонусных дней начислено:</b> {bonus_days_total}")
         text = "\n".join(lines)
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="↩️ Назад к ссылке", callback_data="referral")],
@@ -827,12 +828,11 @@ async def cmd_terms(message: Message):
     ])
     
     await message.answer(
-        "<b>Юридическая информация:</b>\n\n"
-        f"🔒 <b><a href=\"https://telegra.ph/Politika-konfidencialnosti-06-21-31\">Политика конфиденциальности</a></b>\n"
-        f"📄 <b><a href=\"https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19\">Пользовательское соглашение</a></b>",
+        "📜 <b>Юридическая информация</b>\n\n"
+        f"🔒 <a href=\"https://telegra.ph/Politika-konfidencialnosti-06-21-31\">Политика конфиденциальности</a>\n"
+        f"📄 <a href=\"https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19\">Пользовательское соглашение</a>",
         reply_markup=kb,
         parse_mode="HTML",
-        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
     try:
         await message.delete()
