@@ -64,6 +64,14 @@ class Database:
                 """
             )
 
+            # Миграция: колонка для защиты от повторной отправки уведомления
+            # "подписка истекает через 1 день" — хранит subscription_ends_at,
+            # для которого уведомление уже было отправлено (чтобы не дублировать
+            # при каждой ежечасной проверке в течение суток).
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS expiry_notified_for TIMESTAMP"
+            )
+
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS transactions (
@@ -213,6 +221,41 @@ class Database:
             await conn.execute(
                 "UPDATE users SET subscription_ends_at = $1 WHERE user_id = $2",
                 past_date, user_id,
+            )
+
+    async def get_users_expiring_soon(self) -> list[dict]:
+        """
+        Возвращает пользователей, чья подписка истекает в пределах ближайших
+        23-25 часов от текущего момента, и для которых уведомление об истечении
+        именно этой даты ещё не отправлялось (expiry_notified_for либо NULL,
+        либо не совпадает с текущим subscription_ends_at — важно на случай,
+        если пользователь продлил подписку заново уже после получения уведомления,
+        тогда для новой даты уведомление должно отправиться снова).
+        """
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT user_id, full_name, subscription_ends_at
+                FROM users
+                WHERE subscription_ends_at IS NOT NULL
+                  AND subscription_ends_at > CURRENT_TIMESTAMP + INTERVAL '23 hours'
+                  AND subscription_ends_at <= CURRENT_TIMESTAMP + INTERVAL '25 hours'
+                  AND (
+                        expiry_notified_for IS NULL
+                        OR expiry_notified_for != subscription_ends_at
+                      )
+                """
+            )
+            return [_row_to_dict(row) for row in rows]
+
+    async def mark_expiry_notified(self, user_id: int, subscription_ends_at: datetime) -> None:
+        """Помечает, что уведомление об истечении для этой даты окончания уже отправлено."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET expiry_notified_for = $1 WHERE user_id = $2",
+                subscription_ends_at, user_id,
             )
 
     async def reset_user(self, user_id: int) -> tuple[bool, str | None]:
