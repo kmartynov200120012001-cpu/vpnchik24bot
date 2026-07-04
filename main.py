@@ -828,11 +828,12 @@ async def cmd_terms(message: Message):
     ])
     
     await message.answer(
-        "📜 <b>Юридическая информация</b>\n\n"
-        f"🔒 <a href=\"https://telegra.ph/Politika-konfidencialnosti-06-21-31\">Политика конфиденциальности</a>\n"
-        f"📄 <a href=\"https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19\">Пользовательское соглашение</a>",
+        "<b>Юридическая информация:</b>\n\n"
+        f"🔒 <b><a href=\"https://telegra.ph/Politika-konfidencialnosti-06-21-31\">Политика конфиденциальности</a></b>\n"
+        f"📄 <b><a href=\"https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19\">Пользовательское соглашение</a></b>",
         reply_markup=kb,
         parse_mode="HTML",
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
     try:
         await message.delete()
@@ -870,9 +871,9 @@ async def send_expiry_warning(user: dict) -> None:
     name = user.get("full_name") or "друг"
 
     text = (
-        "❗️До окончания подписки остался всего 1 день\n\n"
-        f"Уважаемый(ая), {name}, рекомендуем продлить подписку заранее. После её окончания доступ к Telegram может быть ограничен.\n\n"
-        "👇 Выберите тариф:"
+        "❗️<b>{name}, до окончания Вашей подписки остался всего 1 день</b>\n\n"
+        f"Рекомендуем продлить ее заранее, чтобы не потерять доступ к VPN и Telegram :)\n\n"
+        "👇 <b>Выберите подходящий тариф:</b>"
     )
 
     try:
