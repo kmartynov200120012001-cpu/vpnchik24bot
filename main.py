@@ -527,6 +527,11 @@ async def on_back_to_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data == "tariffs")
 async def on_tariffs(callback: CallbackQuery):
+    try:
+        await db.log_event(callback.from_user.id, "viewed_tariffs")
+    except Exception as e:
+        logging.warning(f"Не удалось залогировать событие viewed_tariffs для {callback.from_user.id}: {e}")
+
     await callback.message.edit_text(
         "🌐 <b>Тарифы</b>\n\n"
         "Что входит в подписку:\n"
@@ -620,6 +625,11 @@ async def on_tariff_selected(callback: CallbackQuery):
         await callback.message.answer("⚠️ Тариф не найден, попробуйте выбрать снова.")
         return
 
+    try:
+        await db.log_event(callback.from_user.id, "clicked_tariff", tariff_callback=tariff_cb)
+    except Exception as e:
+        logging.warning(f"Не удалось залогировать событие clicked_tariff для {callback.from_user.id}: {e}")
+
     days = tariff["days"]
     try:
         payment = await create_payment(
@@ -644,6 +654,14 @@ async def on_tariff_selected(callback: CallbackQuery):
         transaction_id=transaction_id, user_id=callback.from_user.id,
         tariff_callback=tariff_cb, months=tariff["months"], days=days, amount=tariff["price"],
     )
+
+    try:
+        await db.log_event(
+            callback.from_user.id, "payment_created",
+            tariff_callback=tariff_cb, transaction_id=transaction_id,
+        )
+    except Exception as e:
+        logging.warning(f"Не удалось залогировать событие payment_created для {callback.from_user.id}: {e}")
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 Оплатить", url=pay_url)],
