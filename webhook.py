@@ -10,7 +10,7 @@
 import logging
 
 from aiohttp import web
-
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import PLATEGA_MERCHANT_ID, PLATEGA_API_KEY, PLATEGA_CALLBACK_PATH, WEBHOOK_PORT, REFERRAL_BONUS_DAYS
 from database import db
 from xui_client import xui
@@ -101,6 +101,9 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
                         )
 
                     try:
+                        kb_bonus = InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="← Главное меню", callback_data="back_to_menu")]
+                        ])
                         await bot.send_message(
                             chat_id=referrer_id,
                             text=(
@@ -109,6 +112,7 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
                                 f"<b>+{REFERRAL_BONUS_DAYS} дней</b> VPN.\n"
                                 "Спасибо, что приглашаете друзей! 🫂"
                             ),
+                            reply_markup=kb_bonus,
                             parse_mode="HTML",
                         )
                     except Exception as e:
@@ -116,6 +120,9 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
 
         # Уведомляем покупателя в Telegram об успешной оплате
         try:
+            kb_main = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="← Главное меню", callback_data="back_to_menu")]
+            ])
             await bot.send_message(
                 chat_id=user_id,
                 text=(
@@ -123,6 +130,7 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
                     f"Ваша подписка продлена на {days} дн.\n"
                     "Зайдите в меню — ключ доступа уже обновлён."
                 ),
+                reply_markup=kb_main,
                 parse_mode="HTML",
             )
         except Exception as e:
