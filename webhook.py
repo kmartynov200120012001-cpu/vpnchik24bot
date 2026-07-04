@@ -136,7 +136,7 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
                 text=(
                     "✅ <b>Оплата прошла успешно!</b>\n\n"
                     f"Ваша подписка продлена на {days} дн.\n"
-                    "Зайдите в приложение — подписка уже обновлена."
+                    "Спасибо, что остаетесь с нами!"
                 ),
                 reply_markup=kb_main,
                 parse_mode="HTML",
