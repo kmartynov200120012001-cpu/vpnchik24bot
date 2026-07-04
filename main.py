@@ -828,12 +828,11 @@ async def cmd_terms(message: Message):
     ])
     
     await message.answer(
-        "<b>Юридическая информация:</b>\n\n"
-        f"🔒 <b><a href=\"https://telegra.ph/Politika-konfidencialnosti-06-21-31\">Политика конфиденциальности</a></b>\n"
-        f"📄 <b><a href=\"https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19\">Пользовательское соглашение</a></b>",
+        "📜 <b>Юридическая информация</b>\n\n"
+        f"🔒 <a href=\"https://telegra.ph/Politika-konfidencialnosti-06-21-31\">Политика конфиденциальности</a>\n"
+        f"📄 <a href=\"https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19\">Пользовательское соглашение</a>",
         reply_markup=kb,
         parse_mode="HTML",
-        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
     try:
         await message.delete()
@@ -850,6 +849,68 @@ async def delete_any_other_message(message: Message):
         pass
 
 
+# ==================== УВЕДОМЛЕНИЯ ОБ ИСТЕЧЕНИИ ПОДПИСКИ ====================
+
+EXPIRY_WARNING_CHECK_INTERVAL_SECONDS = 60 * 60  # раз в час
+EXPIRY_WARNING_AUTODELETE_SECONDS = 24 * 60 * 60  # автостирание уведомления через 1 день
+
+
+async def _delete_message_later(chat_id: int, message_id: int, delay_seconds: int) -> None:
+    """Ждёт delay_seconds и удаляет сообщение — используется для автостирания уведомления."""
+    await asyncio.sleep(delay_seconds)
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except TelegramBadRequest:
+        pass
+
+
+async def send_expiry_warning(user: dict) -> None:
+    """Отправляет одному пользователю предупреждение о скором окончании подписки."""
+    user_id = user["user_id"]
+    name = user.get("full_name") or "друг"
+
+    text = (
+        "❗️До окончания подписки остался всего 1 день\n\n"
+        f"Уважаемый(ая), {name}, чтобы не остаться без доступа к VPN, "
+        "рекомендуем продлить подписку заранее. После её окончания доступ "
+        "к Telegram может быть ограничен.\n\n"
+        "👇 Выберите тариф:"
+    )
+
+    try:
+        sent = await bot.send_message(
+            chat_id=user_id,
+            text=text,
+            reply_markup=get_tariffs_keyboard(),
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logging.warning(f"Не удалось отправить уведомление об истечении подписки {user_id}: {e}")
+        return
+
+    ends_at = datetime.fromisoformat(user["subscription_ends_at"])
+    await db.mark_expiry_notified(user_id, ends_at)
+
+    asyncio.create_task(
+        _delete_message_later(user_id, sent.message_id, EXPIRY_WARNING_AUTODELETE_SECONDS)
+    )
+
+
+async def check_expiring_subscriptions_loop() -> None:
+    """Фоновый цикл: раз в час проверяет, у кого подписка истекает через ~1 день, и уведомляет."""
+    while True:
+        try:
+            users = await db.get_users_expiring_soon()
+            if users:
+                logging.info(f"Найдено {len(users)} пользователей с истекающей через 1 день подпиской")
+            for user in users:
+                await send_expiry_warning(user)
+        except Exception as e:
+            logging.error(f"Ошибка в check_expiring_subscriptions_loop: {e}")
+
+        await asyncio.sleep(EXPIRY_WARNING_CHECK_INTERVAL_SECONDS)
+
+
 # ==================== ТОЧКА ВХОДА ====================
 
 async def main():
@@ -859,6 +920,7 @@ async def main():
     dp.include_router(router)
     await bot.delete_webhook(drop_pending_updates=True)
     await run_webhook_server(bot)
+    asyncio.create_task(check_expiring_subscriptions_loop())
     await dp.start_polling(bot)
 
 
