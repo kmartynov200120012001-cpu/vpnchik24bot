@@ -65,6 +65,9 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL")
 # nginx проксирует внешние HTTPS-запросы на этот порт.
 WEBHOOK_PORT = int(os.environ.get("WEBHOOK_PORT", "8080"))
 
+# --- SUPPORT BOT (отдельный бот для поддержки, @vpnchiksupportbot) ---
+SUPPORT_BOT_TOKEN = os.environ.get("SUPPORT_BOT_TOKEN")
+
 # Путь callback-эндпоинта (должен совпадать с тем, что указан в ЛК Platega
 # и с PUBLIC_BASE_URL + этот путь).
 PLATEGA_CALLBACK_PATH = "/platega/callback"
