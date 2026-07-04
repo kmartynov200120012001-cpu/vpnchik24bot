@@ -601,14 +601,14 @@ async def on_broadcast_message(message: Message, state: FSMContext):
 
     for user_id in target_ids:
         try:
-            # Вместо copy_to используем ручной forward/send с добавлением клавиатуры
+            # Вместо copy_to используем ручной send с добавлением клавиатуры и parse_mode
             if message.photo:
                 await message.bot.send_photo(
                     chat_id=user_id,
                     photo=message.photo[-1].file_id,
                     caption=message.caption,
                     reply_markup=kb,
-                    parse_mode=message.parse_mode,
+                    parse_mode="HTML", # Явно указываем HTML
                 )
             elif message.document:
                 await message.bot.send_document(
@@ -616,14 +616,14 @@ async def on_broadcast_message(message: Message, state: FSMContext):
                     document=message.document.file_id,
                     caption=message.caption,
                     reply_markup=kb,
-                    parse_mode=message.parse_mode,
+                    parse_mode="HTML", # Явно указываем HTML
                 )
             elif message.sticker:
                 await message.bot.send_sticker(chat_id=user_id, sticker=message.sticker.file_id)
-                # Стикерам нельзя добавить клавиатуру напрямую, но можно отправить следом текст
+                # Стикерам нельзя добавить клавиатуру напрямую, отправляем следом
                 await message.bot.send_message(
                     chat_id=user_id,
-                    text=" ", # пустое сообщение или подпись
+                    text=" ", 
                     reply_markup=kb
                 )
             else:
@@ -632,7 +632,7 @@ async def on_broadcast_message(message: Message, state: FSMContext):
                     chat_id=user_id,
                     text=message.text,
                     reply_markup=kb,
-                    parse_mode=message.parse_mode,
+                    parse_mode="HTML", # Явно указываем HTML
                 )
             success += 1
         except Exception as e:
