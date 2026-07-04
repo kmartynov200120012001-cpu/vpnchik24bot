@@ -2,22 +2,18 @@
 
 import logging
 from datetime import datetime
-
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.exceptions import TelegramForbiddenError
-
 from config import ADMIN_ID
 from database import db
 from xui_client import xui
 
 logger = logging.getLogger(__name__)
-
 admin_router = Router()
-
 
 # ==================== FSM ====================
 
@@ -25,17 +21,14 @@ class BroadcastFSM(StatesGroup):
     waiting_for_user_ids = State()
     waiting_for_message = State()
 
-
 class SubscriptionFSM(StatesGroup):
     waiting_for_user_id = State()
     waiting_for_days = State()
-
 
 # ==================== ФИЛЬТР НА АДМИНА ====================
 
 def is_admin(user_id: int) -> bool:
     return user_id == ADMIN_ID
-
 
 # ==================== УВЕДОМЛЕНИЯ ПОЛЬЗОВАТЕЛЯМ ====================
 
@@ -50,6 +43,10 @@ async def notify_subscription_extended(bot, user_id: int, days: int, ends_at_str
             except (ValueError, TypeError):
                 pass
 
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_notification")]
+        ])
+
         await bot.send_message(
             chat_id=user_id,
             text=(
@@ -58,6 +55,7 @@ async def notify_subscription_extended(bot, user_id: int, days: int, ends_at_str
                 f"📅 Действует до: <b>{ends_formatted}</b>\n\n"
                 "Спасибо, что остаётесь с нами! 💎"
             ),
+            reply_markup=kb,
             parse_mode="HTML",
         )
     except TelegramForbiddenError:
@@ -69,6 +67,10 @@ async def notify_subscription_extended(bot, user_id: int, days: int, ends_at_str
 async def notify_subscription_ended(bot, user_id: int):
     """Отправляет пользователю уведомление о завершении подписки."""
     try:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_notification")]
+        ])
+
         await bot.send_message(
             chat_id=user_id,
             text=(
@@ -76,6 +78,7 @@ async def notify_subscription_ended(bot, user_id: int):
                 "Доступ к VPN приостановлен.\n"
                 "Продлите подписку, чтобы продолжить пользоваться сервисом."
             ),
+            reply_markup=kb,
             parse_mode="HTML",
         )
     except TelegramForbiddenError:
@@ -128,7 +131,6 @@ async def cmd_admin(message: Message):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Доступ запрещён.")
         return
-
     await message.answer(
         "🔧 <b>Админ-панель</b>\n\nВыберите действие:",
         reply_markup=get_admin_keyboard(),
@@ -143,7 +145,6 @@ async def on_admin_panel(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-
     await state.clear()
     await callback.message.edit_text(
         "🔧 <b>Админ-панель</b>\n\nВыберите действие:",
@@ -158,7 +159,6 @@ async def on_admin_stats(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-
     count = await db.get_users_count()
     await callback.message.edit_text(
         f"📊 <b>Статистика</b>\n\n"
@@ -174,9 +174,7 @@ async def on_admin_users(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-
     users = await db.get_all_users()
-
     if not users:
         await callback.message.edit_text(
             "👥 Пользователей пока нет.",
@@ -188,12 +186,10 @@ async def on_admin_users(callback: CallbackQuery):
 
     lines = ["👥 <b>Список пользователей:</b>\n"]
     buttons = []
-
     for i, u in enumerate(users, 1):
         username = f"@{u['username']}" if u.get("username") else "—"
         name = u.get("full_name") or "—"
         user_id = u["user_id"]
-
         ends_at_str = u.get("subscription_ends_at")
         if ends_at_str:
             try:
@@ -206,25 +202,22 @@ async def on_admin_users(callback: CallbackQuery):
                 status = "❌ истекла"
         else:
             status = "⚪ нет"
-
         lines.append(
             f"<b>{i}.</b> <code>{user_id}</code>\n"
             f"   {name} ({username})\n"
             f"   Подписка: {status}\n"
         )
-
         buttons.append([InlineKeyboardButton(
             text=f"⚙️ {name[:20]} ({user_id})",
             callback_data=f"admin_sub_manage_{user_id}",
         )])
-
+    
     text = "\n".join(lines)
-
     if len(text) > 3500:
         text = text[:3500] + "\n\n<i>... список сокращён</i>"
-
+        
     buttons.append([InlineKeyboardButton(text="↩️ Назад в админку", callback_data="admin_panel")])
-
+    
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
@@ -240,7 +233,6 @@ async def on_admin_subscription_start(callback: CallbackQuery, state: FSMContext
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-
     await state.set_state(SubscriptionFSM.waiting_for_user_id)
     await callback.message.edit_text(
         "⏰ <b>Управление подпиской</b>\n\n"
@@ -256,7 +248,6 @@ async def on_admin_subscription_start(callback: CallbackQuery, state: FSMContext
 async def on_subscription_user_id(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
-
     try:
         user_id = int(message.text.strip())
     except ValueError:
@@ -286,7 +277,7 @@ async def on_subscription_user_id(message: Message, state: FSMContext):
 
     name = user.get("full_name") or "—"
     username = f"@{user['username']}" if user.get("username") else "—"
-
+    
     await state.clear()
     await message.answer(
         f"👤 <b>Пользователь:</b> {name} ({username})\n"
@@ -303,10 +294,8 @@ async def on_admin_sub_manage(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-
     user_id = int(callback.data.split("_")[-1])
     user = await db.get_user(user_id)
-
     if not user:
         await callback.answer("❌ Пользователь не найден.", show_alert=True)
         return
@@ -326,7 +315,7 @@ async def on_admin_sub_manage(callback: CallbackQuery):
 
     name = user.get("full_name") or "—"
     username = f"@{user['username']}" if user.get("username") else "—"
-
+    
     await callback.message.edit_text(
         f"👤 <b>Пользователь:</b> {name} ({username})\n"
         f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
@@ -344,15 +333,13 @@ async def on_sub_extend(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-
     parts = callback.data.split("_")
     user_id = int(parts[2])
     days = int(parts[3])
-
+    
     await db.activate_subscription(user_id, days)
-
-    # Продлеваем/создаём реального VPN-клиента в 3x-ui — иначе дни добавятся
-    # только в нашей БД, а в панели и Happ срок останется прежним.
+    
+    # Продлеваем/создаём реального VPN-клиента в 3x-ui
     try:
         email, sub_id = await db.get_xui_client(user_id)
         if email:
@@ -372,12 +359,12 @@ async def on_sub_extend(callback: CallbackQuery):
             ends_formatted = ends_at.strftime("%d.%m.%Y %H:%M")
         except (ValueError, TypeError):
             pass
-
+            
     name = user.get("full_name") or "—"
-
+    
     # ✅ Отправляем уведомление пользователю
     await notify_subscription_extended(callback.bot, user_id, days, ends_at_str)
-
+    
     await callback.message.edit_text(
         f"✅ <b>Подписка продлена!</b>\n\n"
         f"👤 {name} (<code>{user_id}</code>)\n"
@@ -395,11 +382,9 @@ async def on_sub_custom_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-
     user_id = int(callback.data.split("_")[-1])
     await state.update_data(target_user_id=user_id)
     await state.set_state(SubscriptionFSM.waiting_for_days)
-
     await callback.message.edit_text(
         f"⏳ <b>Продление подписки</b>\n\n"
         f"Введите количество дней для продления пользователя <code>{user_id}</code>:",
@@ -417,7 +402,6 @@ async def on_sub_custom_start(callback: CallbackQuery, state: FSMContext):
 async def on_sub_custom_days(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
-
     try:
         days = int(message.text.strip())
         if days <= 0:
@@ -428,14 +412,13 @@ async def on_sub_custom_days(message: Message, state: FSMContext):
 
     data = await state.get_data()
     user_id = data.get("target_user_id")
-
     if not user_id:
         await state.clear()
         await message.answer("❌ Ошибка: пользователь не выбран.")
         return
 
     await db.activate_subscription(user_id, days)
-
+    
     # Продлеваем/создаём реального VPN-клиента в 3x-ui
     try:
         email, sub_id = await db.get_xui_client(user_id)
@@ -448,7 +431,6 @@ async def on_sub_custom_days(message: Message, state: FSMContext):
         logging.error(f"Не удалось продлить 3x-ui клиента для {user_id} (admin custom days): {e}")
 
     await state.clear()
-
     user = await db.get_user(user_id)
     ends_at_str = user.get("subscription_ends_at")
     ends_formatted = ""
@@ -458,12 +440,12 @@ async def on_sub_custom_days(message: Message, state: FSMContext):
             ends_formatted = ends_at.strftime("%d.%m.%Y %H:%M")
         except (ValueError, TypeError):
             pass
-
+            
     name = user.get("full_name") or "—"
-
+    
     # ✅ Отправляем уведомление пользователю
     await notify_subscription_extended(message.bot, user_id, days, ends_at_str)
-
+    
     await message.answer(
         f"✅ <b>Подписка продлена!</b>\n\n"
         f"👤 {name} (<code>{user_id}</code>)\n"
@@ -481,10 +463,10 @@ async def on_sub_end(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-
     user_id = int(callback.data.split("_")[-1])
+    
     await db.end_subscription(user_id)
-
+    
     # Завершаем и реальный VPN-доступ в 3x-ui (не удаляя клиента — просто блокируем)
     try:
         email, sub_id = await db.get_xui_client(user_id)
@@ -495,10 +477,10 @@ async def on_sub_end(callback: CallbackQuery):
 
     user = await db.get_user(user_id)
     name = user.get("full_name") or "—"
-
+    
     # ✅ Отправляем уведомление пользователю
     await notify_subscription_ended(callback.bot, user_id)
-
+    
     await callback.message.edit_text(
         f"❌ <b>Подписка завершена!</b>\n\n"
         f"👤 {name} (<code>{user_id}</code>)\n"
@@ -518,7 +500,6 @@ async def on_admin_reset_self_confirm(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-
     await callback.message.edit_text(
         "🔄 <b>Стать новым пользователем</b>\n\n"
         "Это удалит вашу запись из базы (триал, подписку, историю транзакций) — "
@@ -540,16 +521,14 @@ async def on_admin_reset_self_confirmed(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-
     user_id = callback.from_user.id
     _, xui_email = await db.reset_user(user_id)
-
     if xui_email:
         try:
             await xui.delete_client(xui_email)
         except Exception as e:
             logging.error(f"Не удалось удалить 3x-ui клиента {xui_email} при сбросе {user_id}: {e}")
-
+            
     await callback.message.edit_text(
         "✅ <b>Готово!</b>\n\n"
         "Ваша запись удалена из базы (включая VPN-ключ). Отправьте команду /start, "
@@ -559,14 +538,11 @@ async def on_admin_reset_self_confirmed(callback: CallbackQuery):
     await callback.answer("🔄 Вы сброшены как новый пользователь", show_alert=True)
 
 
-
-
 @admin_router.callback_query(F.data == "admin_broadcast")
 async def on_admin_broadcast_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-
     await state.set_state(BroadcastFSM.waiting_for_user_ids)
     await callback.message.edit_text(
         "📨 <b>Рассылка</b>\n\n"
@@ -583,9 +559,7 @@ async def on_admin_broadcast_start(callback: CallbackQuery, state: FSMContext):
 async def on_broadcast_user_ids(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
-
     text = message.text.strip().lower()
-
     if text == "all":
         users = await db.get_all_users()
         target_ids = [u["user_id"] for u in users]
@@ -597,14 +571,13 @@ async def on_broadcast_user_ids(message: Message, state: FSMContext):
                 target_ids.append(int(raw_id))
             except ValueError:
                 continue
-
+                
     if not target_ids:
         await message.answer("❌ Не удалось распознать ни одного ID. Попробуйте снова.")
         return
-
+        
     await state.update_data(target_ids=target_ids)
     await state.set_state(BroadcastFSM.waiting_for_message)
-
     await message.answer(
         f"✅ Выбрано получателей: <b>{len(target_ids)}</b>\n\n"
         "Теперь отправьте сообщение для рассылки (текст, фото, документ).",
@@ -616,13 +589,11 @@ async def on_broadcast_user_ids(message: Message, state: FSMContext):
 async def on_broadcast_message(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
-
     data = await state.get_data()
     target_ids: list[int] = data.get("target_ids", [])
-
     success = 0
     failed = 0
-
+    
     for user_id in target_ids:
         try:
             await message.copy_to(chat_id=user_id)
@@ -630,9 +601,8 @@ async def on_broadcast_message(message: Message, state: FSMContext):
         except Exception as e:
             logger.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
             failed += 1
-
+            
     await state.clear()
-
     await message.answer(
         f"📨 <b>Рассылка завершена</b>\n\n"
         f"✅ Успешно: {success}\n"
@@ -640,6 +610,18 @@ async def on_broadcast_message(message: Message, state: FSMContext):
         reply_markup=get_admin_keyboard(),
         parse_mode="HTML",
     )
+
+
+# ==================== ОБРАБОТКА КНОПКИ "ЗАКРЫТЬ" УВЕДОМЛЕНИЯ ====================
+
+@admin_router.callback_query(F.data == "delete_notification")
+async def on_delete_notification(callback: CallbackQuery):
+    """Удаляет сообщение с уведомлением при нажатии кнопки 'Закрыть'."""
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.answer()
 
 
 # ==================== СБРОС FSM ПРИ ОТМЕНЕ ====================
