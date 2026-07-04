@@ -19,7 +19,6 @@ from aiogram.types import (
     FSInputFile,
 )
 from aiogram.exceptions import TelegramBadRequest
-
 from config import BOT_TOKEN, FREE_TRIAL_DAYS, TARIFFS
 from database import db
 from admin import admin_router
@@ -428,9 +427,7 @@ async def send_main_menu(
     user_data = await db.get_user(user_id)
     code, _, _ = get_subscription_status(user_data)
 
-    # Для полностью нового пользователя всегда отправляем приветственное фото —
-    # Telegram не позволяет отредактировать текстовое сообщение в сообщение с фото,
-    # поэтому здесь неизбежно удаляем старое и создаём новое.
+    # Для полностью нового пользователя всегда отправляем приветственное фото
     if code == "new":
         await delete_old_menu(bot, chat_id, user_id)
         name = user_data.get("full_name", "друг")
@@ -444,8 +441,7 @@ async def send_main_menu(
         await db.save_menu_message_id(user_id, sent.message_id)
         return
 
-    # При первой активации триала показываем гифку-поздравление отдельным сообщением —
-    # это тоже не редактируется поверх текста, поэтому удаляем старое меню перед этим.
+    # При первой активации триала показываем гифку-поздравление
     if code == "trial_active" and is_activation:
         await delete_old_menu(bot, chat_id, user_id)
         await bot.send_animation(chat_id=chat_id, animation=FSInputFile(CONGRATS_GIF_PATH))
@@ -469,17 +465,14 @@ async def send_main_menu(
         text = get_profile_text(user_data)
         keyboard = get_keyboard_for_user(user_data)
 
-    # force_recreate=True (например, при команде /start) — всегда удаляем старое
-    # сообщение и создаём новое, без попытки редактирования на месте.
+    # force_recreate=True (например, при команде /start) — всегда удаляем старое сообщение
     if force_recreate:
         await delete_old_menu(bot, chat_id, user_id)
         sent = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="HTML")
         await db.save_menu_message_id(user_id, sent.message_id)
         return
 
-    # Обычные переходы между текстовыми экранами (например, кнопка "Главное меню") —
-    # пробуем отредактировать существующее меню-сообщение на месте, чтобы не было
-    # "мигания" от удаления и повторной отправки.
+    # Обычные переходы между текстовыми экранами — пробуем отредактировать
     old_id = await db.get_menu_message_id(user_id)
     if old_id:
         try:
@@ -490,13 +483,10 @@ async def send_main_menu(
                 reply_markup=keyboard,
                 parse_mode="HTML",
             )
-            return  # успешно отредактировали — message_id не изменился, сохранять заново не нужно
+            return
         except TelegramBadRequest as e:
             if "message is not modified" in str(e):
-                # Текст и клавиатура совпадают с уже показанными — ничего делать не нужно.
                 return
-            # Старое сообщение было не текстовым (фото/гифка) или уже недоступно —
-            # переходим к пересозданию ниже.
             await delete_old_menu(bot, chat_id, user_id)
 
     sent = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="HTML")
@@ -579,7 +569,7 @@ async def on_support(callback: CallbackQuery):
 async def on_get_qr_code(callback: CallbackQuery):
     bot_info = await bot.get_me()
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{callback.from_user.id}"
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_qr_message")]])
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_notification")]])
     await callback.message.answer_photo(photo=generate_qr_code(ref_link), reply_markup=kb)
     await callback.answer()
 
@@ -782,14 +772,14 @@ async def on_connect_macos(cb: CallbackQuery):
     await cb.answer()
 
 
-# --- ОБЩИЙ ОБРАБОТЧИК «ГОТОВО» (для Android, iOS, Windows, macOS) ---
+# --- ОБЩИЙ ОБРАБОТЧИК «ГОТОВО» ---
 @router.callback_query(F.data == "setup_done")
 async def on_setup_done(cb: CallbackQuery):
     await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
     await cb.answer()
 
 
-# --- ANDROID TV (СТАРАЯ ЛОГИКА) ---
+# --- ANDROID TV ---
 @router.callback_query(F.data == "connect_android_tv")
 async def on_connect_android_tv(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
@@ -810,27 +800,19 @@ async def on_android_tv_done(cb: CallbackQuery):
 
 # ==================== ЮРИДИЧЕСКИЕ КОМАНДЫ ====================
 
-@router.message(Command("privacy"))
-async def cmd_privacy(message: Message):
+@router.message(Command("terms"))
+async def cmd_terms(message: Message):
+    """Политика конфиденциальности и Пользовательское соглашение."""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_notification")]
+    ])
+    
     await message.answer(
-        "🔒 <b>Политика конфиденциальности</b>\n\nОзнакомьтесь с документом по ссылке ниже:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📄 Читать политику", url="https://telegra.ph/Politika-konfidencialnosti-06-21-31")],
-        ]), parse_mode="HTML",
-    )
-    try:
-        await message.delete()
-    except TelegramBadRequest:
-        pass
-
-
-@router.message(Command("agreement"))
-async def cmd_agreement(message: Message):
-    await message.answer(
-        "📜 <b>Пользовательское соглашение</b>\n\nОзнакомьтесь с документом по ссылке ниже:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📄 Читать соглашение", url="https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19")],
-        ]), parse_mode="HTML",
+        "📜 <b>Юридическая информация</b>\n\n"
+        f"🔒 <a href=\"https://telegra.ph/Politika-konfidencialnosti-06-21-31\">Политика конфиденциальности</a>\n"
+        f"📄 <a href=\"https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19\">Пользовательское соглашение</a>",
+        reply_markup=kb,
+        parse_mode="HTML",
     )
     try:
         await message.delete()
@@ -839,9 +821,6 @@ async def cmd_agreement(message: Message):
 
 
 # Ловит абсолютно любое сообщение от пользователя, не пойманное хендлерами выше
-# (обычный текст, стикеры, фото, голосовые и т.д.) и сразу удаляет его — интерфейс
-# остаётся чистым, пользователь управляет ботом только через inline-кнопки.
-# Должен оставаться последним зарегистрированным @router.message в файле.
 @router.message()
 async def delete_any_other_message(message: Message):
     try:
