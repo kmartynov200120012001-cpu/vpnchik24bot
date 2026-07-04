@@ -594,9 +594,46 @@ async def on_broadcast_message(message: Message, state: FSMContext):
     success = 0
     failed = 0
     
+    # Клавиатура с кнопкой "Закрыть" для рассылки
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_notification")]
+    ])
+
     for user_id in target_ids:
         try:
-            await message.copy_to(chat_id=user_id)
+            # Вместо copy_to используем ручной forward/send с добавлением клавиатуры
+            if message.photo:
+                await message.bot.send_photo(
+                    chat_id=user_id,
+                    photo=message.photo[-1].file_id,
+                    caption=message.caption,
+                    reply_markup=kb,
+                    parse_mode=message.parse_mode,
+                )
+            elif message.document:
+                await message.bot.send_document(
+                    chat_id=user_id,
+                    document=message.document.file_id,
+                    caption=message.caption,
+                    reply_markup=kb,
+                    parse_mode=message.parse_mode,
+                )
+            elif message.sticker:
+                await message.bot.send_sticker(chat_id=user_id, sticker=message.sticker.file_id)
+                # Стикерам нельзя добавить клавиатуру напрямую, но можно отправить следом текст
+                await message.bot.send_message(
+                    chat_id=user_id,
+                    text=" ", # пустое сообщение или подпись
+                    reply_markup=kb
+                )
+            else:
+                # Обычный текст
+                await message.bot.send_message(
+                    chat_id=user_id,
+                    text=message.text,
+                    reply_markup=kb,
+                    parse_mode=message.parse_mode,
+                )
             success += 1
         except Exception as e:
             logger.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
