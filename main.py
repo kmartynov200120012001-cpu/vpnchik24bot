@@ -828,11 +828,12 @@ async def cmd_terms(message: Message):
     ])
     
     await message.answer(
-        "📜 <b>Юридическая информация</b>\n\n"
-        f"🔒 <a href=\"https://telegra.ph/Politika-konfidencialnosti-06-21-31\">Политика конфиденциальности</a>\n"
-        f"📄 <a href=\"https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19\">Пользовательское соглашение</a>",
+        "<b>Юридическая информация:</b>\n\n"
+        f"🔒 <b><a href=\"https://telegra.ph/Politika-konfidencialnosti-06-21-31\">Политика конфиденциальности</a></b>\n"
+        f"📄 <b><a href=\"https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19\">Пользовательское соглашение</a></b>",
         reply_markup=kb,
         parse_mode="HTML",
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
     try:
         await message.delete()
