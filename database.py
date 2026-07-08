@@ -72,6 +72,14 @@ class Database:
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS expiry_notified_for TIMESTAMP"
             )
 
+            # Миграция: поля для партнёрской программы
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_partner BOOLEAN DEFAULT FALSE"
+            )
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS partner_withdrawn_amount DOUBLE PRECISION DEFAULT 0"
+            )
+
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS transactions (
@@ -416,6 +424,45 @@ class Database:
                 referrer_id,
             )
             return value or 0
+
+    # ==================== ПАРТНЁРЫ ====================
+    async def set_partner_status(self, user_id: int, is_partner: bool) -> None:
+        """Назначает или снимает статус партнёра с пользователя."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET is_partner = $1 WHERE user_id = $2",
+                is_partner, user_id,
+            )
+
+    async def get_all_partners(self) -> list[dict]:
+        """Возвращает список всех партнёров."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT user_id, username, full_name, created_at, partner_withdrawn_amount "
+                "FROM users WHERE is_partner = TRUE ORDER BY created_at DESC"
+            )
+            return [_row_to_dict(row) for row in rows]
+
+    async def get_partner_withdrawn_amount(self, user_id: int) -> float:
+        """Возвращает сумму, которую уже вывели партнёру."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                "SELECT partner_withdrawn_amount FROM users WHERE user_id = $1", user_id
+            )
+            return float(value or 0)
+
+    async def add_partner_withdrawal(self, user_id: int, amount: float) -> None:
+        """Добавляет сумму к уже выведенной партнёру."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET partner_withdrawn_amount = partner_withdrawn_amount + $1 "
+                "WHERE user_id = $2",
+                amount, user_id,
+            )
 
     # ==================== ВОРОНКА КОНВЕРСИИ (ДЛЯ АНАЛИТИКИ / GOOGLE SHEETS) ====================
 
