@@ -135,15 +135,24 @@ class Database:
             )
 
     async def add_user(
-        self, user_id: int, username: str, full_name: str, referrer_id: int | None = None
+        self, user_id: int, username: str, full_name: str, 
+        referrer_id: int | None = None, 
+        partner_id: int | None = None
     ) -> bool:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
+            # Определяем, какие поля заполнять
             if referrer_id and referrer_id != user_id:
                 result = await conn.execute(
                     "INSERT INTO users (user_id, username, full_name, referrer_id) "
                     "VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO NOTHING",
                     user_id, username, full_name, referrer_id,
+                )
+            elif partner_id and partner_id != user_id:
+                result = await conn.execute(
+                    "INSERT INTO users (user_id, username, full_name, partner_id) "
+                    "VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO NOTHING",
+                    user_id, username, full_name, partner_id,
                 )
             else:
                 result = await conn.execute(
@@ -151,7 +160,6 @@ class Database:
                     "ON CONFLICT (user_id) DO NOTHING",
                     user_id, username, full_name,
                 )
-            # asyncpg возвращает строку вида "INSERT 0 1" (вставлена 1 строка) или "INSERT 0 0"
             return result.endswith(" 1")
 
     async def get_user(self, user_id: int) -> dict | None:
