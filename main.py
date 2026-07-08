@@ -505,11 +505,15 @@ async def send_main_menu(
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     referrer_id = None
-    if message.text and message.text.startswith("/start ref_"):
+    if message.text and message.text.startswith("/start "):
         try:
-            referrer_id = int(message.text.split("ref_")[1].split()[0])
+            # Поддерживаем оба варианта: ref_ и partner_
+            arg = message.text.split(" ", 1)[1].split()[0]
+            if arg.startswith("ref_") or arg.startswith("partner_"):
+                referrer_id = int(arg.split("_")[1])
         except (ValueError, IndexError):
             pass
+    
     await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name, referrer_id)
     await send_main_menu(bot, message.chat.id, message.from_user.id, is_activation=False, force_recreate=True)
     try:
@@ -522,9 +526,25 @@ async def cmd_partner(message: Message):
     """Партнёрский кабинет: статистика по рефералам и заработку."""
     user_id = message.from_user.id
     await db.add_user(user_id, message.from_user.username, message.from_user.full_name)
+    
+    user = await db.get_user(user_id)
+    is_partner = user.get("is_partner", False)
+    
+    if not is_partner:
+        await message.answer(
+            "⛔ <b>Партнёрский кабинет доступен только для партнёров.</b>\n\n"
+            "Если вы хотите стать партнёром, свяжитесь с поддержкой.",
+            parse_mode="HTML",
+        )
+        try:
+            await message.delete()
+        except TelegramBadRequest:
+            pass
+        return
 
     bot_info = await bot.get_me()
-    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
+    # Партнёрская ссылка (отличается от реферальной)
+    partner_link = f"https://t.me/{bot_info.username}?start=partner_{user_id}"
 
     # Считаем статистику
     total_came = await db.get_referrals_count(user_id)
@@ -532,8 +552,10 @@ async def cmd_partner(message: Message):
     paid_count = await db.get_referrals_with_paid_count(user_id)
     total_paid_amount = await db.get_referrals_total_paid_amount(user_id)
     commission = round(total_paid_amount * PARTNER_COMMISSION_PERCENT / 100, 2)
+    withdrawn = await db.get_partner_withdrawn_amount(user_id)
+    available = round(commission - withdrawn, 2)
 
-    # Красивое отображение суммы (без копеек, если целое)
+    # Красивое отображение суммы
     def fmt_money(v: float) -> str:
         return f"{int(v)}" if v.is_integer() else f"{v:.2f}"
 
@@ -544,18 +566,19 @@ async def cmd_partner(message: Message):
         f"💳 Оплатили подписку: <b>{paid_count}</b>\n"
         f"💰 Сумма оплат: <b>{fmt_money(total_paid_amount)} ₽</b>\n"
         f"💎 Ваш заработок: <b>{fmt_money(commission)} ₽</b> "
-        f"({PARTNER_COMMISSION_PERCENT}%)\n\n"
-        "🔗 <b>Ваша ссылка для приглашений:</b>\n"
-        f"<code>{ref_link}</code>"
+        f"({PARTNER_COMMISSION_PERCENT}%)\n"
+        f"💸 Выведено: <b>{fmt_money(withdrawn)} ₽</b>\n"
+        f"✅ Доступно к выводу: <b>{fmt_money(available)} ₽</b>\n\n"
+        "🔗 <b>Ваша партнёрская ссылка:</b>\n"
+        f"<code>{partner_link}</code>"
     )
 
     await message.answer(
         text,
-        reply_markup=get_partner_keyboard(ref_link),
+        reply_markup=get_partner_keyboard(partner_link),
         parse_mode="HTML",
         link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
-    # Удаляем сам текст команды из чата
     try:
         await message.delete()
     except TelegramBadRequest:
