@@ -74,10 +74,10 @@ class Database:
 
             # Миграция: поля для партнёрской программы
             await conn.execute(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_partner BOOLEAN DEFAULT FALSE"
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS partner_id BIGINT"
             )
             await conn.execute(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS partner_withdrawn_amount DOUBLE PRECISION DEFAULT 0"
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_partner BOOLEAN DEFAULT FALSE"
             )
             await conn.execute(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS partner_withdrawn_amount DOUBLE PRECISION DEFAULT 0"
