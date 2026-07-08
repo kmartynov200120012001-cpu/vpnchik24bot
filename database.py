@@ -79,6 +79,9 @@ class Database:
             await conn.execute(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS partner_withdrawn_amount DOUBLE PRECISION DEFAULT 0"
             )
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS partner_withdrawn_amount DOUBLE PRECISION DEFAULT 0"
+            )
 
             await conn.execute(
                 """
@@ -427,7 +430,7 @@ class Database:
 
     # ==================== ПАРТНЁРЫ ====================
     async def set_partner_status(self, user_id: int, is_partner: bool) -> None:
-        """Назначает или снимает статус партнёра с пользователя."""
+        """Устанавливает статус партнёра (автоматически при первом вызове /partner)."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -453,7 +456,7 @@ class Database:
                 "SELECT partner_withdrawn_amount FROM users WHERE user_id = $1", user_id
             )
             return float(value or 0)
-
+    
     async def add_partner_withdrawal(self, user_id: int, amount: float) -> None:
         """Добавляет сумму к уже выведенной партнёру."""
         pool = await self._get_pool()
@@ -463,7 +466,57 @@ class Database:
                 "WHERE user_id = $2",
                 amount, user_id,
             )
+    
+    # Методы для партнёрской статистики (считают по partner_id, а не по referrer_id)
+    async def get_partner_referrals_count(self, partner_id: int) -> int:
+        """Сколько человек пришло по партнёрской ссылке."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                "SELECT COUNT(*) FROM users WHERE partner_id = $1", partner_id
+            )
+            return value or 0
+    
+    async def get_partner_referrals_with_trial_count(self, partner_id: int) -> int:
+        """Сколько партнёрских рефералов активировали триал."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                "SELECT COUNT(*) FROM users WHERE partner_id = $1 AND trial_used = TRUE",
+                partner_id,
+            )
+            return value or 0
+    
+    async def get_partner_referrals_with_paid_count(self, partner_id: int) -> int:
+        """Сколько партнёрских рефералов оплатили подписку."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                """
+                SELECT COUNT(DISTINCT t.user_id)
+                FROM transactions t
+                JOIN users u ON u.user_id = t.user_id
+                WHERE u.partner_id = $1 AND t.status = 'CONFIRMED'
+                """,
+                partner_id,
+            )
+            return value or 0
 
+    async def get_partner_referrals_total_paid_amount(self, partner_id: int) -> float:
+        """Сумма всех оплат партнёрских рефералов."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                """
+                SELECT COALESCE(SUM(t.amount), 0)
+                FROM transactions t
+                JOIN users u ON u.user_id = t.user_id
+                WHERE u.partner_id = $1 AND t.status = 'CONFIRMED'
+                """,
+                partner_id,
+            )
+            return float(value or 0)
+            
     # ==================== ВОРОНКА КОНВЕРСИИ (ДЛЯ АНАЛИТИКИ / GOOGLE SHEETS) ====================
 
     async def log_event(
