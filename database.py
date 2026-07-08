@@ -305,6 +305,46 @@ class Database:
             )
             return [_row_to_dict(row) for row in rows]
 
+    async def get_referrals_with_trial_count(self, user_id: int) -> int:
+    """Сколько рефералов партнёра активировали бесплатный триал."""
+    pool = await self._get_pool()
+    async with pool.acquire() as conn:
+        value = await conn.fetchval(
+            "SELECT COUNT(*) FROM users WHERE referrer_id = $1 AND trial_used = TRUE",
+            user_id,
+        )
+        return value or 0
+
+async def get_referrals_with_paid_count(self, user_id: int) -> int:
+    """Сколько рефералов партнёра оплатили хотя бы один тариф (любой)."""
+    pool = await self._get_pool()
+    async with pool.acquire() as conn:
+        value = await conn.fetchval(
+            """
+            SELECT COUNT(DISTINCT t.user_id)
+            FROM transactions t
+            JOIN users u ON u.user_id = t.user_id
+            WHERE u.referrer_id = $1 AND t.status = 'CONFIRMED'
+            """,
+            user_id,
+        )
+        return value or 0
+
+async def get_referrals_total_paid_amount(self, user_id: int) -> float:
+    """Сумма всех подтверждённых оплат рефералов партнёра (в рублях)."""
+    pool = await self._get_pool()
+    async with pool.acquire() as conn:
+        value = await conn.fetchval(
+            """
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM transactions t
+            JOIN users u ON u.user_id = t.user_id
+            WHERE u.referrer_id = $1 AND t.status = 'CONFIRMED'
+            """,
+            user_id,
+        )
+        return float(value or 0)
+
     # ==================== ТРАНЗАКЦИИ (ОПЛАТА) ====================
 
     async def create_transaction(
