@@ -19,7 +19,7 @@ from aiogram.types import (
     FSInputFile,
 )
 from aiogram.exceptions import TelegramBadRequest
-from config import BOT_TOKEN, FREE_TRIAL_DAYS, TARIFFS
+from config import BOT_TOKEN, FREE_TRIAL_DAYS, TARIFFS, PARTNER_COMMISSION_PERCENT
 from database import db
 from admin import admin_router
 from payments import create_payment
@@ -145,6 +145,12 @@ def get_device_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="💻 macOS", callback_data="connect_macos")],
         [InlineKeyboardButton(text="📺 Android TV", callback_data="connect_android_tv")],
         [InlineKeyboardButton(text="← Главное меню", callback_data="back_to_menu")],
+    ])
+
+def get_partner_keyboard(ref_link: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 Скопировать ссылку", copy_text=CopyTextButton(text=ref_link))],
+        [InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_notification")],
     ])
 
 
@@ -511,6 +517,49 @@ async def cmd_start(message: Message):
     except TelegramBadRequest:
         pass
 
+@router.message(Command("partner"))
+async def cmd_partner(message: Message):
+    """Партнёрский кабинет: статистика по рефералам и заработку."""
+    user_id = message.from_user.id
+    await db.add_user(user_id, message.from_user.username, message.from_user.full_name)
+
+    bot_info = await bot.get_me()
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
+
+    # Считаем статистику
+    total_came = await db.get_referrals_count(user_id)
+    trial_activated = await db.get_referrals_with_trial_count(user_id)
+    paid_count = await db.get_referrals_with_paid_count(user_id)
+    total_paid_amount = await db.get_referrals_total_paid_amount(user_id)
+    commission = round(total_paid_amount * PARTNER_COMMISSION_PERCENT / 100, 2)
+
+    # Красивое отображение суммы (без копеек, если целое)
+    def fmt_money(v: float) -> str:
+        return f"{int(v)}" if v.is_integer() else f"{v:.2f}"
+
+    text = (
+        "🤝 <b>Партнёрский кабинет</b>\n\n"
+        f"👥 Пришло по ссылке: <b>{total_came}</b>\n"
+        f"🎁 Активировали триал: <b>{trial_activated}</b>\n"
+        f"💳 Оплатили подписку: <b>{paid_count}</b>\n"
+        f"💰 Сумма оплат: <b>{fmt_money(total_paid_amount)} ₽</b>\n"
+        f"💎 Ваш заработок: <b>{fmt_money(commission)} ₽</b> "
+        f"({PARTNER_COMMISSION_PERCENT}%)\n\n"
+        "🔗 <b>Ваша ссылка для приглашений:</b>\n"
+        f"<code>{ref_link}</code>"
+    )
+
+    await message.answer(
+        text,
+        reply_markup=get_partner_keyboard(ref_link),
+        parse_mode="HTML",
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
+    )
+    # Удаляем сам текст команды из чата
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass
 
 @router.callback_query(F.data == "free_trial")
 async def on_free_trial(callback: CallbackQuery):
