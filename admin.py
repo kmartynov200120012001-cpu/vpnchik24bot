@@ -120,7 +120,6 @@ def get_subscription_actions_keyboard(user_id: int) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="➕ Продлить на 365 дней", callback_data=f"sub_extend_{user_id}_365")],
             [InlineKeyboardButton(text="⏳ Продлить на N дней", callback_data=f"sub_custom_{user_id}")],
             [InlineKeyboardButton(text="❌ Завершить подписку", callback_data=f"sub_end_{user_id}")],
-            [InlineKeyboardButton(text="🤝 Назначить партнёром", callback_data=f"partner_set_{user_id}")],
             [InlineKeyboardButton(text="↩️ Назад к списку", callback_data="admin_users")],
         ]
     )
@@ -716,9 +715,9 @@ async def on_admin_partners(callback: CallbackQuery):
         username = f"@{p['username']}" if p.get("username") else ""
         
         # Краткая статистика
-        total_came = await db.get_referrals_count(user_id)
-        paid_count = await db.get_referrals_with_paid_count(user_id)
-        total_paid = await db.get_referrals_total_paid_amount(user_id)
+        total_came = await db.get_partner_referrals_count(user_id)
+        paid_count = await db.get_partner_referrals_with_paid_count(user_id)
+        total_paid = await db.get_partner_referrals_total_paid_amount(user_id)
         commission = round(total_paid * PARTNER_COMMISSION_PERCENT / 100, 2)
         withdrawn = await db.get_partner_withdrawn_amount(user_id)
         
@@ -751,10 +750,10 @@ async def on_partner_manage(callback: CallbackQuery):
     name = user.get("full_name") or "—"
     username = f"@{user['username']}" if user.get("username") else "—"
     
-    total_came = await db.get_referrals_count(user_id)
-    trial_activated = await db.get_referrals_with_trial_count(user_id)
-    paid_count = await db.get_referrals_with_paid_count(user_id)
-    total_paid = await db.get_referrals_total_paid_amount(user_id)
+    total_came = await db.get_partner_referrals_count(user_id)
+    trial_activated = await db.get_partner_referrals_with_trial_count(user_id)
+    paid_count = await db.get_partner_referrals_with_paid_count(user_id)
+    total_paid = await db.get_partner_referrals_total_paid_amount(user_id)
     commission = round(total_paid * PARTNER_COMMISSION_PERCENT / 100, 2)
     withdrawn = await db.get_partner_withdrawn_amount(user_id)
     available = round(commission - withdrawn, 2)
@@ -864,21 +863,3 @@ async def on_partner_remove(callback: CallbackQuery):
         parse_mode="HTML",
     )
     await callback.answer("❌ Партнёр удалён", show_alert=True)
-
-@admin_router.callback_query(F.data.startswith("partner_set_"))
-async def on_partner_set(callback: CallbackQuery):
-    """Назначение пользователя партнёром."""
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
-        return
-    
-    user_id = int(callback.data.split("_")[-1])
-    await db.set_partner_status(user_id, True)
-    
-    user = await db.get_user(user_id)
-    name = user.get("full_name") or "—"
-    
-    await callback.answer(f"✅ {name} назначен партнёром", show_alert=True)
-    
-    # Обновляем экран
-    await on_admin_sub_manage(callback)
