@@ -534,39 +534,27 @@ async def cmd_start(message: Message):
 
 @router.message(Command("partner"))
 async def cmd_partner(message: Message):
-    """Партнёрский кабинет: статистика по рефералам и заработку."""
+    """Партнёрский кабинет: статистика по партнёрским рефералам и заработку."""
     user_id = message.from_user.id
-    await db.add_user(user_id, message.from_user.username, message.from_user.full_name)
     
+    # При первом вызове /partner автоматически становимся партнёром
     user = await db.get_user(user_id)
-    is_partner = user.get("is_partner", False)
+    if not user.get("is_partner", False):
+        await db.set_partner_status(user_id, True)
     
-    if not is_partner:
-        await message.answer(
-            "⛔ <b>Партнёрский кабинет доступен только для партнёров.</b>\n\n"
-            "Если вы хотите стать партнёром, свяжитесь с поддержкой.",
-            parse_mode="HTML",
-        )
-        try:
-            await message.delete()
-        except TelegramBadRequest:
-            pass
-        return
-
     bot_info = await bot.get_me()
     # Партнёрская ссылка (отличается от реферальной)
     partner_link = f"https://t.me/{bot_info.username}?start=partner_{user_id}"
 
-    # Считаем статистику
-    total_came = await db.get_referrals_count(user_id)
-    trial_activated = await db.get_referrals_with_trial_count(user_id)
-    paid_count = await db.get_referrals_with_paid_count(user_id)
-    total_paid_amount = await db.get_referrals_total_paid_amount(user_id)
+    # Считаем статистику ТОЛЬКО по партнёрским рефералам (partner_id)
+    total_came = await db.get_partner_referrals_count(user_id)
+    trial_activated = await db.get_partner_referrals_with_trial_count(user_id)
+    paid_count = await db.get_partner_referrals_with_paid_count(user_id)
+    total_paid_amount = await db.get_partner_referrals_total_paid_amount(user_id)
     commission = round(total_paid_amount * PARTNER_COMMISSION_PERCENT / 100, 2)
     withdrawn = await db.get_partner_withdrawn_amount(user_id)
     available = round(commission - withdrawn, 2)
 
-    # Красивое отображение суммы
     def fmt_money(v: float) -> str:
         return f"{int(v)}" if v.is_integer() else f"{v:.2f}"
 
