@@ -505,16 +505,27 @@ async def send_main_menu(
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     referrer_id = None
+    partner_id = None
+    
     if message.text and message.text.startswith("/start "):
         try:
-            # Поддерживаем оба варианта: ref_ и partner_
             arg = message.text.split(" ", 1)[1].split()[0]
-            if arg.startswith("ref_") or arg.startswith("partner_"):
+            if arg.startswith("ref_"):
                 referrer_id = int(arg.split("_")[1])
+            elif arg.startswith("partner_"):
+                partner_id = int(arg.split("_")[1])
         except (ValueError, IndexError):
             pass
     
-    await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name, referrer_id)
+    # Записываем в БД: referrer_id для реферальной программы, partner_id для партнёрской
+    await db.add_user(
+        message.from_user.id, 
+        message.from_user.username, 
+        message.from_user.full_name, 
+        referrer_id,
+        partner_id  # Добавляем новый параметр
+    )
+    
     await send_main_menu(bot, message.chat.id, message.from_user.id, is_activation=False, force_recreate=True)
     try:
         await message.delete()
