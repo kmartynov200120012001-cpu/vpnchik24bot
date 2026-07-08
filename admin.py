@@ -93,6 +93,7 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="👥 Список пользователей", callback_data="admin_users")],
+            [InlineKeyboardButton(text="🤝 Партнёры", callback_data="admin_partners")],
             [InlineKeyboardButton(text="📨 Рассылка", callback_data="admin_broadcast")],
             [InlineKeyboardButton(text="⏰ Управление подпиской", callback_data="admin_subscription")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
@@ -119,6 +120,7 @@ def get_subscription_actions_keyboard(user_id: int) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="➕ Продлить на 365 дней", callback_data=f"sub_extend_{user_id}_365")],
             [InlineKeyboardButton(text="⏳ Продлить на N дней", callback_data=f"sub_custom_{user_id}")],
             [InlineKeyboardButton(text="❌ Завершить подписку", callback_data=f"sub_end_{user_id}")],
+            [InlineKeyboardButton(text="🤝 Назначить партнёром", callback_data=f"partner_set_{user_id}")],
             [InlineKeyboardButton(text="↩️ Назад к списку", callback_data="admin_users")],
         ]
     )
@@ -685,3 +687,198 @@ async def cancel_subscription_user_id(callback: CallbackQuery, state: FSMContext
         return
     await state.clear()
     await on_admin_panel(callback, state)
+
+
+
+# ==================== ПАРТНЁРЫ ====================
+@admin_router.callback_query(F.data == "admin_partners")
+async def on_admin_partners(callback: CallbackQuery):
+    """Список всех партнёров."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
+        return
+    
+    partners = await db.get_all_partners()
+    if not partners:
+        await callback.message.edit_text(
+            "🤝 <b>Партнёры</b>\n\nПартнёров пока нет.\n\n"
+            "Назначить пользователя партнёром можно через список пользователей.",
+            reply_markup=get_admin_back_keyboard(),
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+    
+    buttons = []
+    for p in partners:
+        user_id = p["user_id"]
+        name = p.get("full_name") or "—"
+        username = f"@{p['username']}" if p.get("username") else ""
+        
+        # Краткая статистика
+        total_came = await db.get_referrals_count(user_id)
+        paid_count = await db.get_referrals_with_paid_count(user_id)
+        total_paid = await db.get_referrals_total_paid_amount(user_id)
+        commission = round(total_paid * PARTNER_COMMISSION_PERCENT / 100, 2)
+        withdrawn = await db.get_partner_withdrawn_amount(user_id)
+        
+        text = f"🤝 {name} {username}\n👥 {total_came} | 💳 {paid_count} | 💰 {commission:.0f}₽ | 💸 {withdrawn:.0f}₽"
+        buttons.append([InlineKeyboardButton(text=text, callback_data=f"partner_manage_{user_id}")])
+    
+    buttons.append([InlineKeyboardButton(text="↩️ Назад в админку", callback_data="admin_panel")])
+    
+    await callback.message.edit_text(
+        "🤝 <b>Партнёры</b>\n\nВыберите партнёра для просмотра детальной статистики:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data.startswith("partner_manage_"))
+async def on_partner_manage(callback: CallbackQuery):
+    """Детальная статистика партнёра."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
+        return
+    
+    user_id = int(callback.data.split("_")[-1])
+    user = await db.get_user(user_id)
+    if not user:
+        await callback.answer("❌ Пользователь не найден.", show_alert=True)
+        return
+    
+    name = user.get("full_name") or "—"
+    username = f"@{user['username']}" if user.get("username") else "—"
+    
+    total_came = await db.get_referrals_count(user_id)
+    trial_activated = await db.get_referrals_with_trial_count(user_id)
+    paid_count = await db.get_referrals_with_paid_count(user_id)
+    total_paid = await db.get_referrals_total_paid_amount(user_id)
+    commission = round(total_paid * PARTNER_COMMISSION_PERCENT / 100, 2)
+    withdrawn = await db.get_partner_withdrawn_amount(user_id)
+    available = round(commission - withdrawn, 2)
+    
+    text = (
+        f"🤝 <b>Партнёр:</b> {name} ({username})\n"
+        f"🆔 <b>ID:</b> <code>{user_id}</code>\n\n"
+        f"👥 Пришло по ссылке: <b>{total_came}</b>\n"
+        f"🎁 Активировали триал: <b>{trial_activated}</b>\n"
+        f"💳 Оплатили подписку: <b>{paid_count}</b>\n"
+        f"💰 Сумма оплат: <b>{total_paid:.2f} ₽</b>\n"
+        f"💎 Заработок ({PARTNER_COMMISSION_PERCENT}%): <b>{commission:.2f} ₽</b>\n"
+        f"💸 Выведено: <b>{withdrawn:.2f} ₽</b>\n"
+        f"✅ Доступно к выводу: <b>{available:.2f} ₽</b>"
+    )
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💸 Отметить вывод", callback_data=f"partner_withdraw_{user_id}")],
+        [InlineKeyboardButton(text="❌ Снять статус партнёра", callback_data=f"partner_remove_{user_id}")],
+        [InlineKeyboardButton(text="↩️ Назад к партнёрам", callback_data="admin_partners")],
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data.startswith("partner_withdraw_"))
+async def on_partner_withdraw_start(callback: CallbackQuery, state: FSMContext):
+    """Начало процесса отметки вывода денег партнёру."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
+        return
+    
+    user_id = int(callback.data.split("_")[-1])
+    await state.update_data(target_partner_id=user_id)
+    await state.set_state(SubscriptionFSM.waiting_for_days)  # Переиспользуем состояние
+    
+    await callback.message.edit_text(
+        f"💸 <b>Отметка вывода денег</b>\n\n"
+        f"Введите сумму (в рублях), которую вы вывели партнёру <code>{user_id}</code>:\n\n"
+        f"<i>Например: 1500</i>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="↩️ Отмена", callback_data=f"partner_manage_{user_id}")],
+            ]
+        ),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@admin_router.message(SubscriptionFSM.waiting_for_days)
+async def on_partner_withdraw_amount(message: Message, state: FSMContext):
+    """Обработка введённой суммы вывода."""
+    if not is_admin(message.from_user.id):
+        return
+    
+    data = await state.get_data()
+    partner_id = data.get("target_partner_id")
+    
+    if not partner_id:
+        # Это не партнёр, а обычное продление подписки — пропускаем
+        return
+    
+    try:
+        amount = float(message.text.strip())
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введите положительное число (сумму в рублях).")
+        return
+    
+    await db.add_partner_withdrawal(partner_id, amount)
+    await state.clear()
+    
+    user = await db.get_user(partner_id)
+    name = user.get("full_name") or "—"
+    new_withdrawn = await db.get_partner_withdrawn_amount(partner_id)
+    
+    await message.answer(
+        f"✅ <b>Вывод отмечен!</b>\n\n"
+        f"👤 {name} (<code>{partner_id}</code>)\n"
+        f"💸 Выведено: <b>{amount:.2f} ₽</b>\n"
+        f"💰 Всего выведено: <b>{new_withdrawn:.2f} ₽</b>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="↩️ Назад к партнёру", callback_data=f"partner_manage_{partner_id}")],
+            ]
+        ),
+        parse_mode="HTML",
+    )
+
+
+@admin_router.callback_query(F.data.startswith("partner_remove_"))
+async def on_partner_remove(callback: CallbackQuery):
+    """Снятие статуса партнёра."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
+        return
+    
+    user_id = int(callback.data.split("_")[-1])
+    await db.set_partner_status(user_id, False)
+    
+    await callback.message.edit_text(
+        f"✅ Статус партнёра снят с пользователя <code>{user_id}</code>.",
+        reply_markup=get_admin_back_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer("❌ Партнёр удалён", show_alert=True)
+
+@admin_router.callback_query(F.data.startswith("partner_set_"))
+async def on_partner_set(callback: CallbackQuery):
+    """Назначение пользователя партнёром."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
+        return
+    
+    user_id = int(callback.data.split("_")[-1])
+    await db.set_partner_status(user_id, True)
+    
+    user = await db.get_user(user_id)
+    name = user.get("full_name") or "—"
+    
+    await callback.answer(f"✅ {name} назначен партнёром", show_alert=True)
+    
+    # Обновляем экран
+    await on_admin_sub_manage(callback)
