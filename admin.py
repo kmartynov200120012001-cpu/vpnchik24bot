@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.exceptions import TelegramForbiddenError
-from config import ADMIN_ID
+from config import ADMIN_ID, PARTNER_COMMISSION_PERCENT
 from database import db
 from xui_client import xui
 
