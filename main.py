@@ -643,9 +643,9 @@ async def inline_partner_invite(query: InlineQuery):
 
     invite_text = (
         "💸 <b>Зарабатывай с VPNchik24</b>\n\n"
-        f"<b>•  {PARTNER_COMMISSION_PERCENT}% с каждой оплаты приглашённых</b>\n"
-        "<b>•  Вывод в любой момент</b>\n"
-        "<b>•  Статистика в реальном времени</b>\n"
+        f"•  {PARTNER_COMMISSION_PERCENT}% с каждой оплаты приглашённых\n"
+        "•  Вывод в любой момент\n"
+        "•  Статистика в реальном времени\n"
     )
 
     # Создаём клавиатуру с кнопкой
