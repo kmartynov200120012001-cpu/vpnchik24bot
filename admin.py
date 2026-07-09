@@ -724,7 +724,11 @@ async def on_admin_partners(callback: CallbackQuery):
         text = f"🤝 {name} {username}\n👥 {total_came} | 💳 {paid_count} | 💰 {commission:.0f}₽ | 💸 {withdrawn:.0f}₽"
         buttons.append([InlineKeyboardButton(text=text, callback_data=f"partner_manage_{user_id}")])
     
-    buttons.append([InlineKeyboardButton(text="↩️ Назад в админку", callback_data="admin_panel")])
+    # Найдите место где создаётся kb в on_admin_partners и добавьте кнопку:
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📨 Пригласить в партнёры", callback_data="admin_partner_invite")],
+        [InlineKeyboardButton(text="↩️ Назад в админку", callback_data="admin_panel")],
+    ])    
     
     await callback.message.edit_text(
         "🤝 <b>Партнёры</b>\n\nВыберите партнёра для просмотра детальной статистики:",
@@ -863,3 +867,107 @@ async def on_partner_remove(callback: CallbackQuery):
         parse_mode="HTML",
     )
     await callback.answer("❌ Партнёр удалён", show_alert=True)
+
+# ==================== ПРИГЛАШЕНИЕ ПАРТНЁРОВ ====================
+@admin_router.callback_query(F.data == "admin_partner_invite")
+async def on_admin_partner_invite_start(callback: CallbackQuery, state: FSMContext):
+    """Начало процесса отправки приглашений стать партнёром."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
+        return
+    
+    await state.set_state(SubscriptionFSM.waiting_for_user_id)  # Переиспользуем состояние
+    await callback.message.edit_text(
+        "🤝 <b>Приглашение в партнёры</b>\n\n"
+        "Введите ID пользователей через запятую или пробел, "
+        "которым хотите отправить приглашение стать партнёром:\n\n"
+        "Пример: <code>123456 789012 345678</code>\n\n"
+        "Или отправьте <b>all</b> для рассылки всем пользователям.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="↩️ Отмена", callback_data="admin_partners")]
+            ]
+        ),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@admin_router.message(SubscriptionFSM.waiting_for_user_id)
+async def on_partner_invite_users(message: Message, state: FSMContext):
+    """Обработка списка пользователей для приглашения."""
+    if not is_admin(message.from_user.id):
+        return
+    
+    text = message.text.strip().lower()
+    
+    if text == "all":
+        users = await db.get_all_users()
+        target_ids = [u["user_id"] for u in users]
+    else:
+        raw_ids = text.replace(",", " ").split()
+        target_ids = []
+        for raw_id in raw_ids:
+            try:
+                target_ids.append(int(raw_id))
+            except ValueError:
+                continue
+    
+    if not target_ids:
+        await message.answer("❌ Не удалось распознать ни одного ID. Попробуйте снова.")
+        return
+    
+    await state.update_data(partner_invite_ids=target_ids)
+    await state.set_state(SubscriptionFSM.waiting_for_days)  # Переиспользуем состояние
+    await message.answer(
+        f"✅ Выбрано получателей: <b>{len(target_ids)}</b>\n\n"
+        "Отправляю приглашения...",
+        parse_mode="HTML",
+    )
+    
+    # Отправляем приглашения
+    bot_info = await message.bot.get_me()
+    partner_link = f"https://t.me/{bot_info.username}?start=partner_auto"
+    
+    success = 0
+    failed = 0
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤝 Стать партнёром", url=partner_link)]
+    ])
+    
+    invite_text = (
+        "🚀 <b>Привет! Хочешь стабильный и быстрый VPN?</b>\n\n"
+        "АЛИСА ВПН VPN 📶 - поможет тебе с этим!\n\n"
+        "💎 <b>Стань нашим партнёром и зарабатывай:</b>\n"
+        "• Получай %{percent} с каждой оплаты приведённых друзей\n"
+        "• Выводи деньги в любой момент\n"
+        "• Отслеживай статистику в реальном времени\n\n"
+        "👇 <b>ЖМИ КНОПКУ И ПОПРОБУЙ БЕСПЛАТНО!</b>".format(percent=PARTNER_COMMISSION_PERCENT)
+    )
+    
+    for user_id in target_ids:
+        try:
+            await message.bot.send_message(
+                chat_id=user_id,
+                text=invite_text,
+                reply_markup=kb,
+                parse_mode="HTML",
+            )
+            success += 1
+        except TelegramForbiddenError:
+            failed += 1
+            logging.warning(f"Не удалось отправить приглашение партнёрства пользователю {user_id}: бот заблокирован")
+        except Exception as e:
+            failed += 1
+            logging.warning(f"Ошибка отправки приглашения партнёрства пользователю {user_id}: {e}")
+    
+    await state.clear()
+    await message.answer(
+        f"🤝 <b>Приглашения отправлены!</b>\n\n"
+        f"✅ Успешно: {success}\n"
+        f"❌ Ошибок: {failed}\n\n"
+        f"Пользователи получили приглашение стать партнёрами.",
+        reply_markup=get_admin_back_keyboard(),
+        parse_mode="HTML",
+    )
