@@ -701,13 +701,18 @@ async def on_admin_partners(callback: CallbackQuery):
     if not partners:
         await callback.message.edit_text(
             "🤝 <b>Партнёры</b>\n\nПартнёров пока нет.\n\n"
-            "Назначить пользователя партнёром можно через список пользователей.",
-            reply_markup=get_admin_back_keyboard(),
+            "Пользователи становятся партнёрами самостоятельно, "
+            "вызвав команду /partner в боте.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📨 Пригласить в партнёры", callback_data="admin_partner_invite")],
+                [InlineKeyboardButton(text="↩️ Назад в админку", callback_data="admin_panel")],
+            ]),
             parse_mode="HTML",
         )
         await callback.answer()
         return
     
+    # Кнопки со списком партнёров
     buttons = []
     for p in partners:
         user_id = p["user_id"]
@@ -724,11 +729,9 @@ async def on_admin_partners(callback: CallbackQuery):
         text = f"🤝 {name} {username}\n👥 {total_came} | 💳 {paid_count} | 💰 {commission:.0f}₽ | 💸 {withdrawn:.0f}₽"
         buttons.append([InlineKeyboardButton(text=text, callback_data=f"partner_manage_{user_id}")])
     
-    # Найдите место где создаётся kb в on_admin_partners и добавьте кнопку:
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📨 Пригласить в партнёры", callback_data="admin_partner_invite")],
-        [InlineKeyboardButton(text="↩️ Назад в админку", callback_data="admin_panel")],
-    ])    
+    # ✅ Объединяем список партнёров + служебные кнопки в ОДНУ клавиатуру
+    buttons.append([InlineKeyboardButton(text="📨 Пригласить в партнёры", callback_data="admin_partner_invite")])
+    buttons.append([InlineKeyboardButton(text="↩️ Назад в админку", callback_data="admin_panel")])
     
     await callback.message.edit_text(
         "🤝 <b>Партнёры</b>\n\nВыберите партнёра для просмотра детальной статистики:",
@@ -736,7 +739,6 @@ async def on_admin_partners(callback: CallbackQuery):
         parse_mode="HTML",
     )
     await callback.answer()
-
 
 @admin_router.callback_query(F.data.startswith("partner_manage_"))
 async def on_partner_manage(callback: CallbackQuery):
