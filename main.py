@@ -16,6 +16,7 @@ from aiogram.types import (
     FSInputFile,
     InlineQuery,
     InlineQueryResultArticle,
+    LinkPreviewOptions,
     InputTextMessageContent,
 )
 from aiogram.exceptions import TelegramBadRequest
