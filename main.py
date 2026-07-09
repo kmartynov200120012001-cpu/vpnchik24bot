@@ -533,7 +533,6 @@ async def cmd_start(message: Message):
     except TelegramBadRequest:
         pass
 
-@router.message(Command("partner"))
 async def _get_partner_cabinet_content(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
     """Формирует текст и клавиатуру для партнёрского кабинета."""
     bot_info = await bot.get_me()
@@ -566,6 +565,9 @@ async def _get_partner_cabinet_content(user_id: int) -> tuple[str, InlineKeyboar
 
     keyboard = get_partner_keyboard(partner_link)
     return text, keyboard
+
+
+@router.message(Command("partner"))
 async def cmd_partner(message: Message):
     """Партнёрский кабинет: статистика по партнёрским рефералам и заработку."""
     user_id = message.from_user.id
