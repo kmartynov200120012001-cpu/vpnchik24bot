@@ -141,7 +141,6 @@ class Database:
     ) -> bool:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            # Определяем, какие поля заполнять
             if referrer_id and referrer_id != user_id:
                 result = await conn.execute(
                     "INSERT INTO users (user_id, username, full_name, referrer_id) "
