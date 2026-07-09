@@ -642,18 +642,16 @@ async def inline_partner_invite(query: InlineQuery):
     partner_link = f"https://t.me/{bot_info.username}?start=partner_auto"
 
     invite_text = (
-        "🚀 <b>Привет! Хочешь стабильный и быстрый VPN?</b>\n\n"
-        "VPNчик24 📶 - поможет тебе с этим!\n\n"
-        "💎 <b>Стань нашим партнёром и зарабатывай:</b>\n"
-        f"• Получай {PARTNER_COMMISSION_PERCENT}% с каждой оплаты приведённых друзей\n"
-        "• Выводи деньги в любой момент\n"
-        "• Отслеживай статистику в реальном времени\n\n"
-        "👇 <b>ЖМИ КНОПКУ И ПОПРОБУЙ БЕСПЛАТНО!</b>"
+        "💸 <b>Зарабатывай с VPNchik24</b>\n\n"
+        f"• {PARTNER_COMMISSION_PERCENT}% с каждой оплаты приглашённых\n"
+        "• Вывод в любой момент\n"
+        "• Статистика в реальном времени\n\n"
+        "👇 <b>Присоединяйся!</b>"
     )
 
     # Создаём клавиатуру с кнопкой
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🤝 Стать партнёром", url=partner_link)]
+        [InlineKeyboardButton(text="🤝 Стать партнёром", url=partner_link, style="success")]
     ])
 
     # Отвечаем inline query
