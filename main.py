@@ -506,6 +506,7 @@ async def send_main_menu(
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     referrer_id = None
+    partner_id = None
     partner_auto = False
     
     if message.text and message.text.startswith("/start "):
@@ -519,13 +520,20 @@ async def cmd_start(message: Message):
                     partner_auto = True
                 else:
                     try:
-                        referrer_id = int(arg.split("_")[1])
+                        partner_id = int(arg.split("_")[1])
                     except (ValueError, IndexError):
                         pass
         except (ValueError, IndexError):
             pass
     
-    await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name, referrer_id)
+    # ОДИН вызов add_user с правильными параметрами
+    await db.add_user(
+        message.from_user.id, 
+        message.from_user.username, 
+        message.from_user.full_name, 
+        referrer_id,
+        partner_id
+    )
     
     # Если перешли по ссылке "Стать партнёром" — сразу показываем партнёрский кабинет
     if partner_auto:
@@ -543,60 +551,12 @@ async def cmd_start(message: Message):
             pass
         return
     
+    # Иначе показываем главное меню
     await send_main_menu(bot, message.chat.id, message.from_user.id, is_activation=False, force_recreate=True)
     try:
         await message.delete()
     except TelegramBadRequest:
         pass
-    
-    # Записываем в БД: referrer_id для реферальной программы, partner_id для партнёрской
-    await db.add_user(
-        message.from_user.id, 
-        message.from_user.username, 
-        message.from_user.full_name, 
-        referrer_id,
-        partner_id  # Добавляем новый параметр
-    )
-    
-    await send_main_menu(bot, message.chat.id, message.from_user.id, is_activation=False, force_recreate=True)
-    try:
-        await message.delete()
-    except TelegramBadRequest:
-        pass
-
-async def _get_partner_cabinet_content(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
-    """Формирует текст и клавиатуру для партнёрского кабинета."""
-    bot_info = await bot.get_me()
-    partner_link = f"https://t.me/{bot_info.username}?start=partner_{user_id}"
-
-    total_came = await db.get_partner_referrals_count(user_id)
-    trial_activated = await db.get_partner_referrals_with_trial_count(user_id)
-    paid_count = await db.get_partner_referrals_with_paid_count(user_id)
-    total_paid_amount = await db.get_partner_referrals_total_paid_amount(user_id)
-    commission = round(total_paid_amount * PARTNER_COMMISSION_PERCENT / 100, 2)
-    withdrawn = await db.get_partner_withdrawn_amount(user_id)
-    available = round(commission - withdrawn, 2)
-
-    def fmt_money(v: float) -> str:
-        return f"{int(v)}" if v.is_integer() else f"{v:.2f}"
-
-    text = (
-        "🤝 <b>Партнёрский кабинет</b>\n\n"
-        f"👥 Пришло по ссылке: <b>{total_came}</b>\n"
-        f"🎁 Активировали триал: <b>{trial_activated}</b>\n"
-        f"💳 Оплатили подписку: <b>{paid_count}</b>\n"
-        f"💰 Сумма оплат: <b>{fmt_money(total_paid_amount)} ₽</b>\n"
-        f"💎 Ваш заработок: <b>{fmt_money(commission)} ₽</b> "
-        f"({PARTNER_COMMISSION_PERCENT}%)\n"
-        f"💸 Выведено: <b>{fmt_money(withdrawn)} ₽</b>\n"
-        f"✅ Доступно к выводу: <b>{fmt_money(available)} ₽</b>\n\n"
-        "🔗 <b>Ваша партнёрская ссылка:</b>\n"
-        f"<code>{partner_link}</code>"
-    )
-
-    keyboard = get_partner_keyboard(partner_link)
-    return text, keyboard
-
 
 @router.message(Command("partner"))
 async def cmd_partner(message: Message):
