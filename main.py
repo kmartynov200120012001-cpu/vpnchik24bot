@@ -150,6 +150,7 @@ def get_device_keyboard() -> InlineKeyboardMarkup:
 def get_partner_keyboard(ref_link: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📋 Скопировать ссылку", copy_text=CopyTextButton(text=ref_link))],
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="partner_refresh")],
         [InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_notification")],
     ])
 
@@ -533,20 +534,11 @@ async def cmd_start(message: Message):
         pass
 
 @router.message(Command("partner"))
-async def cmd_partner(message: Message):
-    """Партнёрский кабинет: статистика по партнёрским рефералам и заработку."""
-    user_id = message.from_user.id
-    
-    # При первом вызове /partner автоматически становимся партнёром
-    user = await db.get_user(user_id)
-    if not user.get("is_partner", False):
-        await db.set_partner_status(user_id, True)
-    
+async def _get_partner_cabinet_content(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Формирует текст и клавиатуру для партнёрского кабинета."""
     bot_info = await bot.get_me()
-    # Партнёрская ссылка (отличается от реферальной)
     partner_link = f"https://t.me/{bot_info.username}?start=partner_{user_id}"
 
-    # Считаем статистику ТОЛЬКО по партнёрским рефералам (partner_id)
     total_came = await db.get_partner_referrals_count(user_id)
     trial_activated = await db.get_partner_referrals_with_trial_count(user_id)
     paid_count = await db.get_partner_referrals_with_paid_count(user_id)
@@ -572,9 +564,21 @@ async def cmd_partner(message: Message):
         f"<code>{partner_link}</code>"
     )
 
+    keyboard = get_partner_keyboard(partner_link)
+    return text, keyboard
+async def cmd_partner(message: Message):
+    """Партнёрский кабинет: статистика по партнёрским рефералам и заработку."""
+    user_id = message.from_user.id
+    
+    user = await db.get_user(user_id)
+    if not user.get("is_partner", False):
+        await db.set_partner_status(user_id, True)
+    
+    text, keyboard = await _get_partner_cabinet_content(user_id)
+    
     await message.answer(
         text,
-        reply_markup=get_partner_keyboard(partner_link),
+        reply_markup=keyboard,
         parse_mode="HTML",
         link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
@@ -582,6 +586,26 @@ async def cmd_partner(message: Message):
         await message.delete()
     except TelegramBadRequest:
         pass
+
+@router.callback_query(F.data == "partner_refresh")
+async def on_partner_refresh(callback: CallbackQuery):
+    """Обновляет статистику в партнёрском кабинете."""
+    user_id = callback.from_user.id
+    
+    text, keyboard = await _get_partner_cabinet_content(user_id)
+    
+    try:
+        await callback.message.edit_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            logging.warning(f"Не удалось обновить партнёрский кабинет для {user_id}: {e}")
+    
+    await callback.answer("✅ Обновлено", show_alert=False)
 
 @router.callback_query(F.data == "free_trial")
 async def on_free_trial(callback: CallbackQuery):
