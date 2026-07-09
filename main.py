@@ -1065,6 +1065,74 @@ async def main():
     asyncio.create_task(check_expiring_subscriptions_loop())
     await dp.start_polling(bot)
 
+# ==================== INLINE MODE ДЛЯ ПАРТНЁРОВ ====================
+@router.inline_query()
+async def inline_partner_invite(query: InlineQuery):
+    """
+    Inline mode для приглашения партнёров.
+    Юзер пишет @botname partner_invite в любом чате -> появляется превью сообщения.
+    """
+    user_id = query.from_user.id
+    user = await db.get_user(user_id)
+    
+    # Проверяем, является ли пользователь партнёром
+    if not user.get("is_partner", False):
+        await query.answer(
+            results=[
+                InlineQueryResultArticle(
+                    id="not_partner",
+                    title="❌ Вы не партнёр",
+                    description="Чтобы приглашать партнёров, станьте партнёром через команду /partner",
+                    input_message_content=InputTextMessageContent(
+                        message_text=(
+                            "⛔ <b>Только партнёры могут приглашать других в партнёрку</b>\n\n"
+                            "Используйте команду /partner, чтобы стать партнёром."
+                        ),
+                        parse_mode="HTML",
+                    ),
+                )
+            ],
+            cache_time=0,
+        )
+        return
+    
+    # Формируем текст приглашения
+    bot_info = await bot.get_me()
+    partner_link = f"https://t.me/{bot_info.username}?start=partner_auto"
+    
+    invite_text = (
+        "🚀 <b>Привет! Хочешь стабильный и быстрый VPN?</b>\n\n"
+        "АЛИСА ВПН VPN 📶 - поможет тебе с этим!\n\n"
+        "💎 <b>Стань нашим партнёром и зарабатывай:</b>\n"
+        f"• Получай {PARTNER_COMMISSION_PERCENT}% с каждой оплаты приведённых друзей\n"
+        "• Выводи деньги в любой момент\n"
+        "• Отслеживай статистику в реальном времени\n\n"
+        "👇 <b>ЖМИ КНОПКУ И ПОПРОБУЙ БЕСПЛАТНО!</b>"
+    )
+    
+    # Создаём клавиатуру с кнопкой
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤝 Стать партнёром", url=partner_link)]
+    ])
+    
+    # Отвечаем inline query
+    await query.answer(
+        results=[
+            InlineQueryResultArticle(
+                id="partner_invite",
+                title="🤝 Пригласить в партнёры",
+                description="Отправить приглашение стать партнёром VPNчик24",
+                input_message_content=InputTextMessageContent(
+                    message_text=invite_text,
+                    parse_mode="HTML",
+                    link_preview_options=LinkPreviewOptions(is_disabled=True),
+                ),
+                reply_markup=kb,
+            )
+        ],
+        cache_time=300,  # Кэшируем на 5 минут
+        is_personal=True,
+    )
 
 if __name__ == "__main__":
     try:
