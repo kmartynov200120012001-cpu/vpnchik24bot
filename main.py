@@ -503,6 +503,40 @@ async def send_main_menu(
 
 # ==================== ХЭНДЛЕРЫ ====================
 
+async def _get_partner_cabinet_content(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Формирует текст и клавиатуру для партнёрского кабинета."""
+    bot_info = await bot.get_me()
+    partner_link = f"https://t.me/{bot_info.username}?start=partner_{user_id}"
+
+    total_came = await db.get_partner_referrals_count(user_id)
+    trial_activated = await db.get_partner_referrals_with_trial_count(user_id)
+    paid_count = await db.get_partner_referrals_with_paid_count(user_id)
+    total_paid_amount = await db.get_partner_referrals_total_paid_amount(user_id)
+    commission = round(total_paid_amount * PARTNER_COMMISSION_PERCENT / 100, 2)
+    withdrawn = await db.get_partner_withdrawn_amount(user_id)
+    available = round(commission - withdrawn, 2)
+
+    def fmt_money(v: float) -> str:
+        return f"{int(v)}" if v.is_integer() else f"{v:.2f}"
+
+    text = (
+        "🤝 <b>Партнёрский кабинет</b>\n\n"
+        f"👥 Пришло по ссылке: <b>{total_came}</b>\n"
+        f"🎁 Активировали триал: <b>{trial_activated}</b>\n"
+        f"💳 Оплатили подписку: <b>{paid_count}</b>\n"
+        f"💰 Сумма оплат: <b>{fmt_money(total_paid_amount)} ₽</b>\n"
+        f"💎 Ваш заработок: <b>{fmt_money(commission)} ₽</b> "
+        f"({PARTNER_COMMISSION_PERCENT}%)\n"
+        f"💸 Выведено: <b>{fmt_money(withdrawn)} ₽</b>\n"
+        f"✅ Доступно к выводу: <b>{fmt_money(available)} ₽</b>\n\n"
+        "🔗 <b>Ваша партнёрская ссылка:</b>\n"
+        f"<code>{partner_link}</code>"
+    )
+
+    keyboard = get_partner_keyboard(partner_link)
+    return text, keyboard
+
+
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     referrer_id = None
@@ -513,26 +547,24 @@ async def cmd_start(message: Message):
         try:
             arg = message.text.split(" ", 1)[1].split()[0]
             if arg.startswith("ref_"):
+                # Реферальная ссылка: ref_{user_id}
                 referrer_id = int(arg.split("_")[1])
+            elif arg == "partner_auto":
+                # Ссылка из приглашения "Стать партнёром"
+                partner_auto = True
             elif arg.startswith("partner_"):
-                # partner_auto или partner_{user_id}
-                if arg == "partner_auto":
-                    partner_auto = True
-                else:
-                    try:
-                        partner_id = int(arg.split("_")[1])
-                    except (ValueError, IndexError):
-                        pass
+                # Партнёрская ссылка: partner_{user_id}
+                partner_id = int(arg.split("_")[1])
         except (ValueError, IndexError):
             pass
     
-    # ОДИН вызов add_user с правильными параметрами
+    # Записываем в БД: referrer_id для реферальной программы, partner_id для партнёрской
     await db.add_user(
         message.from_user.id, 
         message.from_user.username, 
         message.from_user.full_name, 
         referrer_id,
-        partner_id
+        partner_id,
     )
     
     # Если перешли по ссылке "Стать партнёром" — сразу показываем партнёрский кабинет
@@ -551,7 +583,6 @@ async def cmd_start(message: Message):
             pass
         return
     
-    # Иначе показываем главное меню
     await send_main_menu(bot, message.chat.id, message.from_user.id, is_activation=False, force_recreate=True)
     try:
         await message.delete()
