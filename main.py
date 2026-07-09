@@ -506,7 +506,7 @@ async def send_main_menu(
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     referrer_id = None
-    partner_id = None
+    partner_auto = False
     
     if message.text and message.text.startswith("/start "):
         try:
@@ -514,9 +514,40 @@ async def cmd_start(message: Message):
             if arg.startswith("ref_"):
                 referrer_id = int(arg.split("_")[1])
             elif arg.startswith("partner_"):
-                partner_id = int(arg.split("_")[1])
+                # partner_auto или partner_{user_id}
+                if arg == "partner_auto":
+                    partner_auto = True
+                else:
+                    try:
+                        referrer_id = int(arg.split("_")[1])
+                    except (ValueError, IndexError):
+                        pass
         except (ValueError, IndexError):
             pass
+    
+    await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name, referrer_id)
+    
+    # Если перешли по ссылке "Стать партнёром" — сразу показываем партнёрский кабинет
+    if partner_auto:
+        await db.set_partner_status(message.from_user.id, True)
+        text, keyboard = await _get_partner_cabinet_content(message.from_user.id)
+        await message.answer(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
+        try:
+            await message.delete()
+        except TelegramBadRequest:
+            pass
+        return
+    
+    await send_main_menu(bot, message.chat.id, message.from_user.id, is_activation=False, force_recreate=True)
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass
     
     # Записываем в БД: referrer_id для реферальной программы, partner_id для партнёрской
     await db.add_user(
