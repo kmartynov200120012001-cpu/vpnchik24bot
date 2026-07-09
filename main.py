@@ -139,7 +139,6 @@ def get_partner_keyboard(ref_link: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔄 Обновить", callback_data="partner_refresh")],
         [InlineKeyboardButton(text=" Скопировать ссылку", copy_text=CopyTextButton(text=ref_link))],
-        [InlineKeyboardButton(text="🤝 Пригласить партнёра", switch_inline_query="partner_invite")],
         [InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_notification")],
     ])
 
