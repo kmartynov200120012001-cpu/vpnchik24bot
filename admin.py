@@ -664,7 +664,7 @@ async def on_admin_partners(callback: CallbackQuery):
             "Пользователи становятся партнёрами самостоятельно, "
             "вызвав команду /partner в боте.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="📨 Пригласить в партнёры", callback_data="admin_partner_invite")],
+                [InlineKeyboardButton(text="📨 Пригласить в партнёры", switch_inline_query="partner_invite")],
                 [InlineKeyboardButton(text="↩️ Назад в админку", callback_data="admin_panel")],
             ]),
             parse_mode="HTML",
@@ -687,7 +687,7 @@ async def on_admin_partners(callback: CallbackQuery):
         text = f"🤝 {name} {username}\n👥 {total_came} | 💳 {paid_count} | 💰 {commission:.0f}₽ | 💸 {withdrawn:.0f}₽"
         buttons.append([InlineKeyboardButton(text=text, callback_data=f"partner_manage_{user_id}")])
     
-    buttons.append([InlineKeyboardButton(text="📨 Пригласить в партнёры", callback_data="admin_partner_invite")])
+    buttons.append([InlineKeyboardButton(text="📨 Пригласить в партнёры", switch_inline_query="partner_invite")])
     buttons.append([InlineKeyboardButton(text="↩️ Назад в админку", callback_data="admin_panel")])
     
     await callback.message.edit_text(
@@ -820,39 +820,3 @@ async def on_partner_remove(callback: CallbackQuery):
         parse_mode="HTML",
     )
     await callback.answer("❌ Партнёр удалён", show_alert=True)
-
-# ==================== ПРИГЛАШЕНИЕ ПАРТНЁРОВ ====================
-@admin_router.callback_query(F.data == "admin_partner_invite")
-async def on_admin_partner_invite(callback: CallbackQuery):
-    """Генерация приглашения для ручной отправки админом."""
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
-        return
-    
-    bot_info = await callback.bot.get_me()
-    partner_link = f"https://t.me/{bot_info.username}?start=partner_auto"
-    
-    invite_text = (
-        " <b>Привет! Хочешь стабильный и быстрый VPN?</b>\n\n"
-        "АЛИСА ВПН VPN  - поможет тебе с этим!\n\n"
-        "💎 <b>Стань нашим партнёром и зарабатывай:</b>\n"
-        f"• Получай {PARTNER_COMMISSION_PERCENT}% с каждой оплаты приведённых друзей\n"
-        "• Выводи деньги в любой момент\n"
-        "• Отслеживай статистику в реальном времени\n\n"
-        "👇 <b>ЖМИ КНОПКУ И ПОПРОБУЙ БЕСПЛАТНО!</b>"
-    )
-    
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🤝 Стать партнёром", url=partner_link)],
-        [InlineKeyboardButton(text="📤 Поделиться ссылкой", switch_inline_query=partner_link)],
-    ])
-    
-    await callback.message.edit_text(
-        "📨 <b>Приглашение в партнёры</b>\n\n"
-        "Ниже готовое сообщение. Нажмите <b>«Поделиться»</b> или скопируйте ссылку, "
-        "чтобы отправить приглашение нужным людям <b>от своего имени</b>:\n\n"
-        f"<i>{invite_text}</i>",
-        reply_markup=kb,
-        parse_mode="HTML",
-    )
-    await callback.answer()
