@@ -107,7 +107,7 @@ def get_main_keyboard_new_user() -> InlineKeyboardMarkup:
 def get_main_keyboard_before_activation() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
-        [InlineKeyboardButton(text=" Пригласить друга (+10 дней)", callback_data="referral")],
+        [InlineKeyboardButton(text="🫂 Пригласить друга (+10 дней)", callback_data="referral")],
         [InlineKeyboardButton(text="💬 Поддержка", callback_data="support")],
     ])
 
@@ -127,7 +127,7 @@ def get_trial_dynamic_keyboard(key_link: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Подключить VPN", callback_data="connect_vpn", style="primary")],
         [InlineKeyboardButton(text="✅ Продлить доступ", callback_data="tariffs", style="success")],
-        [InlineKeyboardButton(text=" Пригласить друга (+10 дней)", callback_data="referral")],
+        [InlineKeyboardButton(text="🫂 Пригласить друга (+10 дней)", callback_data="referral")],
         [InlineKeyboardButton(text="💬 Поддержка", callback_data="support")],
     ])
 
@@ -144,8 +144,8 @@ def get_referral_keyboard(ref_link: str, referrals_count: int) -> InlineKeyboard
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Скопировать ссылку", copy_text=CopyTextButton(text=ref_link))],
         [
-            InlineKeyboardButton(text="🧾 Получить QR-код", callback_data="get_qr_code"),
-            InlineKeyboardButton(text="📩 Пригласить друга", url=share_url),
+            InlineKeyboardButton(text="🧾 QR-код", callback_data="get_qr_code"),
+            InlineKeyboardButton(text="📩 Пригласить", url=share_url),
         ],
         [InlineKeyboardButton(text=f"🫂 Мои рефералы ({referrals_count})", callback_data="my_referrals")],
         [InlineKeyboardButton(text="← Главное меню", callback_data="back_to_menu")],
@@ -212,7 +212,7 @@ def _windows_instruction_kb() -> InlineKeyboardMarkup:
 def _macos_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done")],
-        [InlineKeyboardButton(text=" Нужна помощь", callback_data="support")],
+        [InlineKeyboardButton(text="🆘 Нужна помощь", callback_data="support")],
         [
             InlineKeyboardButton(text="← Назад", callback_data="connect_vpn"),
             InlineKeyboardButton(text="⮎ Главное меню", callback_data="back_to_menu"),
@@ -369,8 +369,8 @@ def get_profile_text(user: dict) -> str:
     status_map = {"new": " доступен", "trial_active": "🎁 триал активен", "expired": "❌ истёк"}
     status = status_map.get(code, "")
     return (
-        f"🔴 <b>VPN отключен</b>\n\n"
-        f"Доступ к сервису приостановлен\n\n"
+        f"❌ <b>Ваша подписка завершена</b>\n\n"
+        f"Доступ к VPN приостановлен.\n\n"
         f"💎 <b>Продлите подписку и пользуйтесь VPNчиком без ограничений (от 11 ₽/сутки)</b>"
     )
 
@@ -671,7 +671,7 @@ async def inline_partner_invite(query: InlineQuery):
 
     # Создаём клавиатуру с кнопкой
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🤝 Стать партнёром", url=partner_link)]
+        [InlineKeyboardButton(text="🤝 Стать партнёром", url=partner_link, style="success")]
     ])
 
     # Отвечаем inline query
@@ -799,8 +799,8 @@ async def on_my_referrals(callback: CallbackQuery):
         lines.append(f"\n💎 <b>Всего бонусных дней начислено:</b> {bonus_days_total}")
         text = "\n".join(lines)
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="↩️ Назад к ссылке", callback_data="referral")],
-        [InlineKeyboardButton(text="← Главное меню", callback_data="back_to_menu")],
+        [InlineKeyboardButton(text="← Назад", callback_data="referral")],
+        [InlineKeyboardButton(text="⮎ Главное меню", callback_data="back_to_menu")],
     ])
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
@@ -955,7 +955,7 @@ async def on_connect_macos(cb: CallbackQuery):
         f"2️⃣ <b>Установите приложение INCY из</b> "
         f'<a href="https://apps.apple.com/ru/app/incy/id6756943388"><b>App Store</b></a>'
         f"\n\n"
-        f'3️ <b>Откройте приложение и нажмите "Вставить" внизу экрана</b>\n\n'
+        f'3️⃣ <b>Откройте приложение и нажмите "📄Вставить" внизу экрана</b>\n\n'
         f"4️⃣ <b>Включите VPN</b>\n"
     )
     await cb.message.edit_text(text, reply_markup=_macos_instruction_kb(), parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
