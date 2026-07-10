@@ -72,6 +72,17 @@ class Database:
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS expiry_notified_for TIMESTAMP"
             )
 
+            # Миграция: поля для партнёрской программы
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS partner_id BIGINT"
+            )
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_partner BOOLEAN DEFAULT FALSE"
+            )
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS partner_withdrawn_amount DOUBLE PRECISION DEFAULT 0"
+            )
+
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS transactions (
@@ -116,26 +127,6 @@ class Database:
                 )
                 """
             )
-
-            # --- Отложенное удаление сообщений (например, уведомление об истечении подписки
-            # через 24 часа). Хранится в БД, а не в памяти процесса (asyncio.sleep) —
-            # переживает перезапуск бота: при рестарте фоновый цикл найдёт просроченные
-            # записи (delete_at уже в прошлом) и удалит сообщение сразу же.
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS scheduled_deletions (
-                    id          SERIAL PRIMARY KEY,
-                    chat_id     BIGINT NOT NULL,
-                    message_id  BIGINT NOT NULL,
-                    delete_at   TIMESTAMP NOT NULL,
-                    deleted     BOOLEAN NOT NULL DEFAULT FALSE
-                )
-                """
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_scheduled_deletions_pending "
-                "ON scheduled_deletions (delete_at) WHERE deleted = FALSE"
-            )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_events_user_id ON user_events (user_id)"
             )
@@ -144,7 +135,9 @@ class Database:
             )
 
     async def add_user(
-        self, user_id: int, username: str, full_name: str, referrer_id: int | None = None
+        self, user_id: int, username: str, full_name: str, 
+        referrer_id: int | None = None, 
+        partner_id: int | None = None
     ) -> bool:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
@@ -154,13 +147,18 @@ class Database:
                     "VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO NOTHING",
                     user_id, username, full_name, referrer_id,
                 )
+            elif partner_id and partner_id != user_id:
+                result = await conn.execute(
+                    "INSERT INTO users (user_id, username, full_name, partner_id) "
+                    "VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO NOTHING",
+                    user_id, username, full_name, partner_id,
+                )
             else:
                 result = await conn.execute(
                     "INSERT INTO users (user_id, username, full_name) VALUES ($1, $2, $3) "
                     "ON CONFLICT (user_id) DO NOTHING",
                     user_id, username, full_name,
                 )
-            # asyncpg возвращает строку вида "INSERT 0 1" (вставлена 1 строка) или "INSERT 0 0"
             return result.endswith(" 1")
 
     async def get_user(self, user_id: int) -> dict | None:
@@ -278,37 +276,6 @@ class Database:
                 subscription_ends_at, user_id,
             )
 
-    # ==================== ОТЛОЖЕННОЕ УДАЛЕНИЕ СООБЩЕНИЙ (переживает рестарт бота) ====================
-
-    async def schedule_message_deletion(self, chat_id: int, message_id: int, delay_seconds: int) -> None:
-        """Планирует удаление сообщения через delay_seconds — запись сохраняется в БД,
-        поэтому переживает перезапуск бота (в отличие от asyncio.sleep в памяти)."""
-        delete_at = datetime.now() + timedelta(seconds=delay_seconds)
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO scheduled_deletions (chat_id, message_id, delete_at) VALUES ($1, $2, $3)",
-                chat_id, message_id, delete_at,
-            )
-
-    async def get_due_deletions(self) -> list[dict]:
-        """Возвращает все ещё не удалённые записи, для которых наступило время удаления
-        (включая просроченные, если бот был выключен дольше, чем планировалось)."""
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT id, chat_id, message_id FROM scheduled_deletions "
-                "WHERE deleted = FALSE AND delete_at <= CURRENT_TIMESTAMP"
-            )
-            return [dict(row) for row in rows]
-
-    async def mark_deletion_done(self, deletion_id: int) -> None:
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE scheduled_deletions SET deleted = TRUE WHERE id = $1", deletion_id
-            )
-
     async def reset_user(self, user_id: int) -> tuple[bool, str | None]:
         """
         Полностью удаляет пользователя и связанные с ним транзакции из БД,
@@ -355,6 +322,46 @@ class Database:
                 user_id,
             )
             return [_row_to_dict(row) for row in rows]
+
+    async def get_referrals_with_trial_count(self, user_id: int) -> int:
+        """Сколько рефералов партнёра активировали бесплатный триал."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                "SELECT COUNT(*) FROM users WHERE referrer_id = $1 AND trial_used = TRUE",
+                user_id,
+            )
+            return value or 0
+
+    async def get_referrals_with_paid_count(self, user_id: int) -> int:
+        """Сколько рефералов партнёра оплатили хотя бы один тариф (любой)."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                """
+                SELECT COUNT(DISTINCT t.user_id)
+                FROM transactions t
+                JOIN users u ON u.user_id = t.user_id
+                WHERE u.referrer_id = $1 AND t.status = 'CONFIRMED'
+                """,
+                user_id,
+            )
+            return value or 0
+
+    async def get_referrals_total_paid_amount(self, user_id: int) -> float:
+        """Сумма всех подтверждённых оплат рефералов партнёра (в рублях)."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                """
+                SELECT COALESCE(SUM(t.amount), 0)
+                FROM transactions t
+                JOIN users u ON u.user_id = t.user_id
+                WHERE u.referrer_id = $1 AND t.status = 'CONFIRMED'
+                """,
+                user_id,
+            )
+            return float(value or 0)
 
     # ==================== ТРАНЗАКЦИИ (ОПЛАТА) ====================
 
@@ -428,6 +435,95 @@ class Database:
             )
             return value or 0
 
+    # ==================== ПАРТНЁРЫ ====================
+    async def set_partner_status(self, user_id: int, is_partner: bool) -> None:
+        """Устанавливает статус партнёра (автоматически при первом вызове /partner)."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET is_partner = $1 WHERE user_id = $2",
+                is_partner, user_id,
+            )
+
+    async def get_all_partners(self) -> list[dict]:
+        """Возвращает список всех партнёров."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT user_id, username, full_name, created_at, partner_withdrawn_amount "
+                "FROM users WHERE is_partner = TRUE ORDER BY created_at DESC"
+            )
+            return [_row_to_dict(row) for row in rows]
+
+    async def get_partner_withdrawn_amount(self, user_id: int) -> float:
+        """Возвращает сумму, которую уже вывели партнёру."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                "SELECT partner_withdrawn_amount FROM users WHERE user_id = $1", user_id
+            )
+            return float(value or 0)
+    
+    async def add_partner_withdrawal(self, user_id: int, amount: float) -> None:
+        """Добавляет сумму к уже выведенной партнёру."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET partner_withdrawn_amount = partner_withdrawn_amount + $1 "
+                "WHERE user_id = $2",
+                amount, user_id,
+            )
+    
+    # Методы для партнёрской статистики (считают по partner_id, а не по referrer_id)
+    async def get_partner_referrals_count(self, partner_id: int) -> int:
+        """Сколько человек пришло по партнёрской ссылке."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                "SELECT COUNT(*) FROM users WHERE partner_id = $1", partner_id
+            )
+            return value or 0
+    
+    async def get_partner_referrals_with_trial_count(self, partner_id: int) -> int:
+        """Сколько партнёрских рефералов активировали триал."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                "SELECT COUNT(*) FROM users WHERE partner_id = $1 AND trial_used = TRUE",
+                partner_id,
+            )
+            return value or 0
+    
+    async def get_partner_referrals_with_paid_count(self, partner_id: int) -> int:
+        """Сколько партнёрских рефералов оплатили подписку."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                """
+                SELECT COUNT(DISTINCT t.user_id)
+                FROM transactions t
+                JOIN users u ON u.user_id = t.user_id
+                WHERE u.partner_id = $1 AND t.status = 'CONFIRMED'
+                """,
+                partner_id,
+            )
+            return value or 0
+
+    async def get_partner_referrals_total_paid_amount(self, partner_id: int) -> float:
+        """Сумма всех оплат партнёрских рефералов."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                """
+                SELECT COALESCE(SUM(t.amount), 0)
+                FROM transactions t
+                JOIN users u ON u.user_id = t.user_id
+                WHERE u.partner_id = $1 AND t.status = 'CONFIRMED'
+                """,
+                partner_id,
+            )
+            return float(value or 0)
+            
     # ==================== ВОРОНКА КОНВЕРСИИ (ДЛЯ АНАЛИТИКИ / GOOGLE SHEETS) ====================
 
     async def log_event(
