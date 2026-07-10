@@ -155,8 +155,8 @@ def get_referral_keyboard(ref_link: str, referrals_count: int) -> InlineKeyboard
 def get_partner_keyboard(ref_link: str) -> InlineKeyboardMarkup:
     """Клавиатура партнёрского кабинета."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 Обновить", callback_data="partner_refresh")],
         [InlineKeyboardButton(text=" Скопировать ссылку", copy_text=CopyTextButton(text=ref_link))],
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="partner_refresh")],
         [InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_notification")],
     ])
 
@@ -396,10 +396,10 @@ def get_trial_welcome_text(user: dict, key_link: str) -> str:
         except (ValueError, TypeError):
             pass
     return (
-        f" <b>VPN работает</b>\n\n"
+        f" <b>🟢 VPN работает</b>\n\n"
         f"<blockquote><b>Осталось:</b> <i>{remaining_text}</i></blockquote>\n\n"
         f"💎 Продлить доступ можно в любой момент\n\n"
-        f" <b>Ваш VPN-ключ:</b>\n"
+        f"🔑 <b>Ваш VPN-ключ:</b>\n"
         f"<code>{key_link}</code>\n"
     )
 
@@ -663,13 +663,10 @@ async def inline_partner_invite(query: InlineQuery):
     partner_link = f"https://t.me/{bot_info.username}?start=partner_auto"
 
     invite_text = (
-        "🚀 <b>Привет! Хочешь стабильный и быстрый VPN?</b>\n\n"
-        "VPNчик24 📶 - поможет тебе с этим!\n\n"
-        "💎 <b>Стань нашим партнёром и зарабатывай:</b>\n"
-        f"• Получай {PARTNER_COMMISSION_PERCENT}% с каждой оплаты приведённых друзей\n"
-        "• Выводи деньги в любой момент\n"
-        "• Отслеживай статистику в реальном времени\n\n"
-        "👇 <b>ЖМИ КНОПКУ И ПОПРОБУЙ БЕСПЛАТНО!</b>"
+        "💸 <b>Зарабатывай с VPNchik24</b>\n\n"
+        f"•  {PARTNER_COMMISSION_PERCENT}% с каждой оплаты приглашённых\n"
+        "•  Вывод в любой момент\n"
+        "•  Статистика в реальном времени\n"
     )
 
     # Создаём клавиатуру с кнопкой
