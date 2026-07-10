@@ -463,7 +463,7 @@ class Database:
                 "SELECT partner_withdrawn_amount FROM users WHERE user_id = $1", user_id
             )
             return float(value or 0)
-
+    
     async def add_partner_withdrawal(self, user_id: int, amount: float) -> None:
         """Добавляет сумму к уже выведенной партнёру."""
         pool = await self._get_pool()
@@ -473,7 +473,7 @@ class Database:
                 "WHERE user_id = $2",
                 amount, user_id,
             )
-
+    
     # Методы для партнёрской статистики (считают по partner_id, а не по referrer_id)
     async def get_partner_referrals_count(self, partner_id: int) -> int:
         """Сколько человек пришло по партнёрской ссылке."""
@@ -483,7 +483,7 @@ class Database:
                 "SELECT COUNT(*) FROM users WHERE partner_id = $1", partner_id
             )
             return value or 0
-
+    
     async def get_partner_referrals_with_trial_count(self, partner_id: int) -> int:
         """Сколько партнёрских рефералов активировали триал."""
         pool = await self._get_pool()
@@ -493,7 +493,7 @@ class Database:
                 partner_id,
             )
             return value or 0
-
+    
     async def get_partner_referrals_with_paid_count(self, partner_id: int) -> int:
         """Сколько партнёрских рефералов оплатили подписку."""
         pool = await self._get_pool()
@@ -523,7 +523,7 @@ class Database:
                 partner_id,
             )
             return float(value or 0)
-
+            
     # ==================== ВОРОНКА КОНВЕРСИИ (ДЛЯ АНАЛИТИКИ / GOOGLE SHEETS) ====================
 
     async def log_event(
@@ -658,3 +658,5 @@ async def get_partner_referrals_total_paid_amount(self, partner_id: int) -> floa
             partner_id,
         )
         return float(value or 0)
+
+db = Database()
