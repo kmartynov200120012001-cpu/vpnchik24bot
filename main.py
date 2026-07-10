@@ -1028,7 +1028,7 @@ async def send_expiry_warning(user: dict) -> None:
     user_id = user["user_id"]
     name = user.get("full_name") or "друг"
     text = (
-        f"️<b>{name}, до окончания Вашей подписки остался всего 1 день</b>\n\n"
+        f"️❗️ <b>{name}, до окончания Вашей подписки остался всего 1 день</b>\n\n"
         "Рекомендуем продлить ее заранее, чтобы не потерять доступ к VPN и Telegram :)\n\n"
         "👇 <b>Выберите подходящий тариф:</b>"
     )
