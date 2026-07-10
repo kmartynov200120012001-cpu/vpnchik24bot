@@ -714,7 +714,7 @@ async def on_tariffs(callback: CallbackQuery):
     except Exception as e:
         logging.warning(f"Не удалось залогировать событие viewed_tariffs для {callback.from_user.id}: {e}")
     await callback.message.edit_text(
-        " <b>Тарифы</b>\n\n"
+        "🌐 <b>Тарифы</b>\n\n"
         "Что входит в подписку:\n"
         "✓ <i>Безлимитный трафик и скорость</i>\n"
         "✓ <i>До 5 устройств</i>\n"
