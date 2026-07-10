@@ -64,6 +64,25 @@ def get_days_since_registration(created_at_str: str) -> int:
         return 0
 
 
+def pluralize_ru(number: int, one: str, few: str, many: str) -> str:
+    """
+    Правильное склонение русских существительных по числу.
+    one — форма для 1, 21, 31... (например, "день", "час")
+    few — форма для 2-4, 22-24... (например, "дня", "часа")
+    many — форма для 0, 5-20, 25-30... (например, "дней", "часов")
+    Учитывает исключение для чисел 11-14 (всегда "many": "11 дней", "12 дней" и т.д.)
+    """
+    n = abs(number) % 100
+    if 11 <= n <= 14:
+        return many
+    last_digit = n % 10
+    if last_digit == 1:
+        return one
+    if 2 <= last_digit <= 4:
+        return few
+    return many
+
+
 async def get_or_create_subscription_link(user_id: int) -> str:
     """Возвращает subscription URL. Создаёт клиента в 3x-ui если его нет."""
     email, sub_id = await db.get_xui_client(user_id)
@@ -136,8 +155,8 @@ def get_referral_keyboard(ref_link: str, referrals_count: int) -> InlineKeyboard
 def get_partner_keyboard(ref_link: str) -> InlineKeyboardMarkup:
     """Клавиатура партнёрского кабинета."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=" Скопировать ссылку", copy_text=CopyTextButton(text=ref_link))],
         [InlineKeyboardButton(text="🔄 Обновить", callback_data="partner_refresh")],
+        [InlineKeyboardButton(text=" Скопировать ссылку", copy_text=CopyTextButton(text=ref_link))],
         [InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_notification")],
     ])
 
@@ -301,11 +320,11 @@ def get_paid_profile_text(user: dict) -> str:
         hours_left = delta.seconds // 3600
         # Форматирование времени для варианта "< 3 дней" (если нужно будет вернуть обратный отсчет)
         if days_left > 0:
-            day_word = "день" if days_left == 1 else "дня" if days_left < 5 else "дней"
-            hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
+            day_word = pluralize_ru(days_left, "день", "дня", "дней")
+            hour_word = pluralize_ru(hours_left, "час", "часа", "часов")
             time_left_text = f"{days_left} {day_word} {hours_left} {hour_word}"
         else:
-            hour_word = "час" if hours_left == 1 else "часа" if hours_left < 5 else "часов"
+            hour_word = pluralize_ru(hours_left, "час", "часа", "часов")
             time_left_text = f"{hours_left} {hour_word}"
         if days_left > 3:
             # Вариант 1: Больше 3 дней
@@ -368,17 +387,19 @@ def get_trial_welcome_text(user: dict, key_link: str) -> str:
                 days = delta.days
                 hours = delta.seconds // 3600
                 if days > 0:
-                    day_word = "день" if days == 1 else "дня" if days < 5 else "дней"
-                    remaining_text = f"{days} {day_word} {hours} часа"
+                    day_word = pluralize_ru(days, "день", "дня", "дней")
+                    hour_word = pluralize_ru(hours, "час", "часа", "часов")
+                    remaining_text = f"{days} {day_word} {hours} {hour_word}"
                 else:
-                    remaining_text = f"{hours} часа"
+                    hour_word = pluralize_ru(hours, "час", "часа", "часов")
+                    remaining_text = f"{hours} {hour_word}"
         except (ValueError, TypeError):
             pass
     return (
-        f" <b>🟢 VPN работает</b>\n\n"
+        f" <b>VPN работает</b>\n\n"
         f"<blockquote><b>Осталось:</b> <i>{remaining_text}</i></blockquote>\n\n"
         f"💎 Продлить доступ можно в любой момент\n\n"
-        f" <b>🔑 Ваш VPN-ключ:</b>\n"
+        f" <b>Ваш VPN-ключ:</b>\n"
         f"<code>{key_link}</code>\n"
     )
 
@@ -642,15 +663,18 @@ async def inline_partner_invite(query: InlineQuery):
     partner_link = f"https://t.me/{bot_info.username}?start=partner_auto"
 
     invite_text = (
-        "💸 <b>Зарабатывай с VPNchik24</b>\n\n"
-        f"•  {PARTNER_COMMISSION_PERCENT}% с каждой оплаты приглашённых\n"
-        "•  Вывод в любой момент\n"
-        "•  Статистика в реальном времени\n"
+        "🚀 <b>Привет! Хочешь стабильный и быстрый VPN?</b>\n\n"
+        "VPNчик24 📶 - поможет тебе с этим!\n\n"
+        "💎 <b>Стань нашим партнёром и зарабатывай:</b>\n"
+        f"• Получай {PARTNER_COMMISSION_PERCENT}% с каждой оплаты приведённых друзей\n"
+        "• Выводи деньги в любой момент\n"
+        "• Отслеживай статистику в реальном времени\n\n"
+        "👇 <b>ЖМИ КНОПКУ И ПОПРОБУЙ БЕСПЛАТНО!</b>"
     )
 
     # Создаём клавиатуру с кнопкой
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🤝 Стать партнёром", url=partner_link, style="success")]
+        [InlineKeyboardButton(text="🤝 Стать партнёром", url=partner_link)]
     ])
 
     # Отвечаем inline query
@@ -999,15 +1023,7 @@ async def delete_any_other_message(message: Message):
 # ==================== УВЕДОМЛЕНИЯ ОБ ИСТЕЧЕНИИ ПОДПИСКИ ====================
 EXPIRY_WARNING_CHECK_INTERVAL_SECONDS = 60 * 60  # раз в час
 EXPIRY_WARNING_AUTODELETE_SECONDS = 24 * 60 * 60  # автостирание уведомления через 1 день
-
-
-async def _delete_message_later(chat_id: int, message_id: int, delay_seconds: int) -> None:
-    """Ждёт delay_seconds и удаляет сообщение — используется для автостирания уведомления."""
-    await asyncio.sleep(delay_seconds)
-    try:
-        await bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except TelegramBadRequest:
-        pass
+SCHEDULED_DELETIONS_CHECK_INTERVAL_SECONDS = 60 * 5  # проверка отложенных удалений раз в 5 минут
 
 
 async def send_expiry_warning(user: dict) -> None:
@@ -1015,7 +1031,7 @@ async def send_expiry_warning(user: dict) -> None:
     user_id = user["user_id"]
     name = user.get("full_name") or "друг"
     text = (
-        "️<b>{name}, до окончания Вашей подписки остался всего 1 день</b>\n\n"
+        f"️<b>{name}, до окончания Вашей подписки остался всего 1 день</b>\n\n"
         "Рекомендуем продлить ее заранее, чтобы не потерять доступ к VPN и Telegram :)\n\n"
         "👇 <b>Выберите подходящий тариф:</b>"
     )
@@ -1031,9 +1047,9 @@ async def send_expiry_warning(user: dict) -> None:
         return
     ends_at = datetime.fromisoformat(user["subscription_ends_at"])
     await db.mark_expiry_notified(user_id, ends_at)
-    asyncio.create_task(
-        _delete_message_later(user_id, sent.message_id, EXPIRY_WARNING_AUTODELETE_SECONDS)
-    )
+    # Планируем удаление через БД, а не через asyncio.sleep в памяти — так запись
+    # переживёт перезапуск бота (который случается при каждом обновлении кода).
+    await db.schedule_message_deletion(user_id, sent.message_id, EXPIRY_WARNING_AUTODELETE_SECONDS)
 
 
 async def check_expiring_subscriptions_loop() -> None:
@@ -1050,6 +1066,29 @@ async def check_expiring_subscriptions_loop() -> None:
         await asyncio.sleep(EXPIRY_WARNING_CHECK_INTERVAL_SECONDS)
 
 
+async def process_scheduled_deletions_loop() -> None:
+    """
+    Фоновый цикл: раз в 5 минут удаляет сообщения, для которых наступило
+    (или уже прошло) запланированное время удаления. Работает через БД —
+    если бот был выключен дольше срока удаления, просроченные сообщения
+    будут удалены сразу же при следующем запуске, а не потеряны навсегда.
+    """
+    while True:
+        try:
+            due = await db.get_due_deletions()
+            for item in due:
+                try:
+                    await bot.delete_message(chat_id=item["chat_id"], message_id=item["message_id"])
+                except TelegramBadRequest:
+                    pass  # сообщение уже удалено вручную или чат недоступен — это нормально
+                except Exception as e:
+                    logging.warning(f"Не удалось удалить запланированное сообщение {item}: {e}")
+                await db.mark_deletion_done(item["id"])
+        except Exception as e:
+            logging.error(f"Ошибка в process_scheduled_deletions_loop: {e}")
+        await asyncio.sleep(SCHEDULED_DELETIONS_CHECK_INTERVAL_SECONDS)
+
+
 # ==================== ТОЧКА ВХОДА ====================
 async def main():
     await db.init()
@@ -1059,6 +1098,7 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await run_webhook_server(bot)
     asyncio.create_task(check_expiring_subscriptions_loop())
+    asyncio.create_task(process_scheduled_deletions_loop())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
