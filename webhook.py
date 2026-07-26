@@ -129,7 +129,7 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
         # Уведомляем покупателя в Telegram об успешной оплате
         try:
             kb_main = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="← Главное меню", callback_data="back_to_menu")]
+                [InlineKeyboardButton(text="", callback_data="back_to_menu")]
             ])
             await bot.send_message(
                 chat_id=user_id,
