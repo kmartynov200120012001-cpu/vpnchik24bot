@@ -110,7 +110,7 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
 
                     try:
                         kb_bonus = InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="← Главное меню", callback_data="back_to_menu")]
+                            [InlineKeyboardButton(text="", callback_data="back_to_menu")]
                         ])
                         await bot.send_message(
                             chat_id=referrer_id,
