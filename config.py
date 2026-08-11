@@ -47,7 +47,16 @@ XUI_BASE_URL = os.environ.get("XUI_BASE_URL", "http://127.0.0.1:1221")
 XUI_WEB_BASE_PATH = os.environ.get("XUI_WEB_BASE_PATH", "")  # например "/cLKcauTRI6nq259pPt"
 XUI_USERNAME = os.environ.get("XUI_USERNAME")
 XUI_PASSWORD = os.environ.get("XUI_PASSWORD")
-XUI_INBOUND_ID = int(os.environ.get("XUI_INBOUND_ID", "2"))
+# Список всех inbound ID, к которым подключаются клиенты.
+# Задаётся через переменную окружения как строка через запятую, например: "2,4"
+# Чтобы добавить новый inbound в будущем — просто допишите его ID в эту переменную.
+XUI_INBOUND_IDS: list[int] = [
+    int(x.strip())
+    for x in os.environ.get("XUI_INBOUND_IDS", "2,4").split(",")
+    if x.strip().isdigit()
+]
+# Для обратной совместимости — первый inbound считается основным
+XUI_INBOUND_ID = XUI_INBOUND_IDS[0] if XUI_INBOUND_IDS else 2
 
 # Публичный домен/IP и порт, на котором реально слушает Xray (inbound) —
 # это то, что попадёт в ссылку-конфиг для клиента. Не путать с XUI_BASE_URL (это для админки).
