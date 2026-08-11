@@ -87,6 +87,8 @@ async def main():
         f"  Всего обработано:             {total}"
     )
 
+    await xui.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
