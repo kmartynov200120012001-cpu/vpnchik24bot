@@ -29,6 +29,7 @@ from config import (
     XUI_USERNAME,
     XUI_PASSWORD,
     XUI_INBOUND_ID,
+    XUI_INBOUND_IDS,
     XUI_PUBLIC_HOST,
 )
 
@@ -164,7 +165,7 @@ class XUIClient:
         self,
         user_id: int,
         days: int,
-        inbound_id: int = XUI_INBOUND_ID,
+        inbound_ids: list[int] | None = None,
         flow: str = "xtls-rprx-vision",
     ) -> dict:
         """
@@ -174,7 +175,16 @@ class XUIClient:
         клиент проходит TLS-handshake, но реальный трафик не проксируется.
         Возвращает {"sub_id": ..., "email": ...}.
         days<=0 означает "без ограничения по времени" (expiryTime=0).
+
+        inbound_ids — список ID inbound'ов, к которым подключается клиент.
+        По умолчанию берётся XUI_INBOUND_IDS из конфига (все активные inbound'ы).
+        Чтобы добавить новый inbound в будущем — достаточно добавить его ID
+        в переменную окружения XUI_INBOUND_IDS, перезапускать бот не нужно
+        (значение читается при старте).
         """
+        if inbound_ids is None:
+            inbound_ids = XUI_INBOUND_IDS
+
         sub_id = _gen_sub_id()
         email = f"tg{user_id}_{sub_id[:6]}"
 
@@ -194,15 +204,65 @@ class XUIClient:
                 "limitIp": 0,
                 "enable": True,
             },
-            "inboundIds": [inbound_id],
+            "inboundIds": inbound_ids,
         }
 
         data = await self._request("POST", "/panel/api/clients/add", json=payload)
         if not data.get("success", False):
             raise RuntimeError(f"3x-ui add_client failed: {data}")
 
-        logging.info(f"3x-ui: создан клиент {email} (subId={sub_id}, flow={flow}) на {days} дн.")
+        logging.info(
+            f"3x-ui: создан клиент {email} (subId={sub_id}, flow={flow}) "
+            f"на {days} дн. в inbound'ах {inbound_ids}"
+        )
         return {"sub_id": sub_id, "email": email}
+
+    async def sync_client_inbounds(self, email: str) -> list[int]:
+        """
+        Добавляет существующего клиента (по email) во все inbound'ы из XUI_INBOUND_IDS,
+        в которых его ещё нет. Возвращает список ID inbound'ов, в которые клиент был
+        добавлен в ходе этого вызова (пустой список — если он уже был везде).
+
+        Используется:
+        - скриптом миграции для существующих пользователей (migrate_inbounds.py),
+        - в будущем — при добавлении нового inbound: запустить миграцию и все клиенты
+          автоматически появятся в новом inbound'е.
+
+        Логика: API /clients/get/{email} возвращает поле inboundIds — список inbound'ов,
+        к которым клиент уже привязан. Сравниваем с XUI_INBOUND_IDS и добавляем недостающие.
+        """
+        data = await self._request("GET", f"/panel/api/clients/get/{email}")
+        if not data.get("success", False):
+            raise RuntimeError(f"3x-ui: клиент {email} не найден при синхронизации inbound'ов")
+
+        obj = data.get("obj") or {}
+        existing_ids: list[int] = obj.get("inboundIds") or []
+        missing_ids = [iid for iid in XUI_INBOUND_IDS if iid not in existing_ids]
+
+        if not missing_ids:
+            return []
+
+        client = obj.get("client") or {}
+        payload = {
+            "client": {
+                "email": client.get("email", email),
+                "subId": client.get("subId", ""),
+                "flow": client.get("flow", "xtls-rprx-vision"),
+                "totalGB": client.get("totalGB", 0),
+                "expiryTime": client.get("expiryTime", 0),
+                "tgId": client.get("tgId", 0),
+                "limitIp": client.get("limitIp", 0),
+                "enable": client.get("enable", True),
+            },
+            "inboundIds": missing_ids,
+        }
+
+        add_data = await self._request("POST", "/panel/api/clients/add", json=payload)
+        if not add_data.get("success", False):
+            raise RuntimeError(f"3x-ui sync_client_inbounds failed for {email}: {add_data}")
+
+        logging.info(f"3x-ui: клиент {email} добавлен в недостающие inbound'ы {missing_ids}")
+        return missing_ids
 
     async def get_client(self, email: str) -> dict | None:
         """
