@@ -432,15 +432,14 @@ async def send_main_menu(
 ) -> None:
     user_data = await db.get_user(user_id)
     code, _, _ = get_subscription_status(user_data)
-    # Для полностью нового пользователя всегда отправляем приветственное фото
+    # Для нового пользователя сразу показываем выбор устройства —
+    # триал активируется автоматически когда пользователь выбирает устройство.
     if code == "new":
         await delete_old_menu(bot, chat_id, user_id)
-        name = user_data.get("full_name", "друг")
-        sent = await bot.send_photo(
+        sent = await bot.send_message(
             chat_id=chat_id,
-            photo=FSInputFile(WELCOME_PIC_PATH),
-            caption=get_welcome_text(name),
-            reply_markup=get_main_keyboard_new_user(),
+            text="<b>Выберите ваше устройство:</b>",
+            reply_markup=get_device_keyboard(),
             parse_mode="HTML",
         )
         await db.save_menu_message_id(user_id, sent.message_id)
