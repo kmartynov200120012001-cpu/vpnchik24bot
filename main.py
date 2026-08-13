@@ -19,7 +19,7 @@ from aiogram.types import (
     InputTextMessageContent,
 )
 from aiogram.exceptions import TelegramBadRequest
-from config import BOT_TOKEN, FREE_TRIAL_DAYS, TARIFFS, PARTNER_COMMISSION_PERCENT
+from config import BOT_TOKEN, FREE_TRIAL_DAYS, TARIFFS, PARTNER_COMMISSION_PERCENT, TRIAL_TRAFFIC_GB
 from database import db
 from admin import admin_router
 from payments import create_payment
@@ -89,7 +89,7 @@ async def get_or_create_subscription_link(user_id: int) -> str:
     if email and sub_id:
         return xui.build_subscription_url(sub_id)
     try:
-        result = await xui.add_client(user_id=user_id, days=FREE_TRIAL_DAYS)
+        result = await xui.add_client(user_id=user_id, days=FREE_TRIAL_DAYS, total_gb=TRIAL_TRAFFIC_GB)
     except Exception as e:
         logging.error(f"Не удалось создать 3x-ui клиента для {user_id}: {e}")
         return "⚠️ Не удалось сгенерировать ключ. Попробуйте позже или напишите в поддержку."
@@ -1075,6 +1075,32 @@ async def check_expiring_subscriptions_loop() -> None:
         await asyncio.sleep(EXPIRY_WARNING_CHECK_INTERVAL_SECONDS)
 
 
+async def check_traffic_reset_loop() -> None:
+    """
+    Фоновый цикл: раз в сутки сбрасывает трафик платным пользователям,
+    у которых прошло 30 дней с последнего сброса (или сброс ещё не делался).
+    Триальных пользователей не трогает — у них фиксированный лимит 30 ГБ
+    на весь период триала.
+    """
+    while True:
+        await asyncio.sleep(24 * 60 * 60)  # раз в сутки
+        try:
+            users = await db.get_users_for_traffic_reset()
+            if users:
+                logging.info(f"Сброс трафика: найдено {len(users)} пользователей")
+            for user in users:
+                email = user.get("xui_email")
+                user_id = user["user_id"]
+                try:
+                    await xui.reset_client_traffic(email)
+                    await db.update_traffic_reset_at(user_id)
+                    logging.info(f"Трафик сброшен: user={user_id} email={email}")
+                except Exception as e:
+                    logging.error(f"Не удалось сбросить трафик user={user_id} email={email}: {e}")
+        except Exception as e:
+            logging.error(f"Ошибка в check_traffic_reset_loop: {e}")
+
+
 async def process_scheduled_deletions_loop() -> None:
     """
     Фоновый цикл: раз в 5 минут удаляет сообщения, для которых наступило
@@ -1108,6 +1134,7 @@ async def main():
     await run_webhook_server(bot)
     asyncio.create_task(check_expiring_subscriptions_loop())
     asyncio.create_task(process_scheduled_deletions_loop())
+    asyncio.create_task(check_traffic_reset_loop())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
