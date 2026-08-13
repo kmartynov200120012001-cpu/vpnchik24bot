@@ -167,6 +167,7 @@ class XUIClient:
         days: int,
         inbound_ids: list[int] | None = None,
         flow: str = "xtls-rprx-vision",
+        total_gb: int = 0,
     ) -> dict:
         """
         Создаёт нового клиента через новый Clients API.
@@ -198,7 +199,7 @@ class XUIClient:
                 "email": email,
                 "subId": sub_id,
                 "flow": flow,
-                "totalGB": 0,
+                "totalGB": total_gb * 1024 ** 3 if total_gb > 0 else 0,
                 "expiryTime": expiry_time_ms,
                 "tgId": user_id,
                 "limitIp": 0,
@@ -213,7 +214,7 @@ class XUIClient:
 
         logging.info(
             f"3x-ui: создан клиент {email} (subId={sub_id}, flow={flow}) "
-            f"на {days} дн. в inbound'ах {inbound_ids}"
+            f"на {days} дн., лимит {total_gb} ГБ, inbound'ы {inbound_ids}"
         )
         return {"sub_id": sub_id, "email": email}
 
@@ -278,12 +279,23 @@ class XUIClient:
             return None
         return obj.get("client")
 
-    async def update_client_expiry(self, email: str, days: int, extend: bool = True) -> None:
+    async def update_client_expiry(
+        self,
+        email: str,
+        days: int,
+        extend: bool = True,
+        total_gb: int | None = None,
+        reset_traffic: bool = False,
+    ) -> None:
         """
         Продлевает существующего клиента (по email).
         extend=True — добавляет days к текущему expiryTime (или к "сейчас", если клиент
         истёк/был безлимитным) — так повторная покупка не обрезает уже оплаченные дни.
         days<=0 — делает клиента безлимитным (expiryTime=0).
+
+        total_gb — если передан, выставляет новый лимит трафика в ГБ (0 = безлимит).
+        reset_traffic=True — сбрасывает накопленный трафик клиента (нужно при продлении
+        платной подписки, чтобы счётчик 999 ГБ обнулялся каждый месяц).
 
         ВАЖНО: get_client возвращает поле "id" как число (внутренний ID записи в БД панели),
         но update ожидает структуру без этого числового id (или с id как строкой/uuid) —
@@ -307,12 +319,17 @@ class XUIClient:
         else:
             expiry_time_ms = now_ms + days * 86400 * 1000
 
+        if total_gb is not None:
+            total_gb_bytes = total_gb * 1024 ** 3 if total_gb > 0 else 0
+        else:
+            total_gb_bytes = current.get("totalGB", 0)
+
         payload = {
             "email": current["email"],
             "subId": current.get("subId", ""),
             "flow": current.get("flow", "xtls-rprx-vision"),
             "limitIp": current.get("limitIp", 0),
-            "totalGB": current.get("totalGB", 0),
+            "totalGB": total_gb_bytes,
             "expiryTime": expiry_time_ms,
             "tgId": current.get("tgId", 0),
             "enable": True,
@@ -322,7 +339,18 @@ class XUIClient:
         if not data.get("success", False):
             raise RuntimeError(f"3x-ui update_client_expiry failed: {data}")
 
-        logging.info(f"3x-ui: клиент {email} продлён на {days} дн. (новый expiryTime={expiry_time_ms})")
+        logging.info(
+            f"3x-ui: клиент {email} продлён на {days} дн. "
+            f"(expiryTime={expiry_time_ms}, totalGB={total_gb_bytes})"
+        )
+
+        # Сброс счётчика трафика — отдельный запрос к API панели
+        if reset_traffic:
+            reset_data = await self._request("POST", f"/panel/api/clients/resetClientTraffic/{email}")
+            if not reset_data.get("success", False):
+                logging.warning(f"3x-ui: не удалось сбросить трафик клиента {email}: {reset_data}")
+            else:
+                logging.info(f"3x-ui: трафик клиента {email} сброшен")
 
     async def set_client_flow(self, email: str, flow: str = "xtls-rprx-vision") -> None:
         """
@@ -406,6 +434,16 @@ class XUIClient:
           по /json/ -> 127.0.0.1:2096), JSON Reverse Proxy URI: https://<домен>/json/
         """
         return f"https://{XUI_PUBLIC_HOST}/json/{sub_id}"
+
+    async def reset_client_traffic(self, email: str) -> None:
+        """
+        Сбрасывает накопленный трафик клиента без изменения срока подписки.
+        Вызывается фоновым циклом раз в 30 дней для платных пользователей.
+        """
+        data = await self._request("POST", f"/panel/api/clients/resetClientTraffic/{email}")
+        if not data.get("success", False):
+            raise RuntimeError(f"3x-ui reset_client_traffic failed for {email}: {data}")
+        logging.info(f"3x-ui: трафик клиента {email} сброшен")
 
     async def close(self) -> None:
         if self._session and not self._session.closed:
