@@ -701,7 +701,21 @@ async def on_free_trial(callback: CallbackQuery):
 
 @router.callback_query(F.data == "back_to_menu")
 async def on_back_to_menu(callback: CallbackQuery):
-    await send_main_menu(bot, callback.message.chat.id, callback.from_user.id, is_activation=False)
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+    current_msg_id = callback.message.message_id
+
+    # Если callback пришёл не из сохранённого сообщения главного меню
+    # (например, из уведомления об истечении подписки) — удаляем его,
+    # чтобы оно не оставалось висеть после перехода в меню.
+    saved_menu_id = await db.get_menu_message_id(user_id)
+    if saved_menu_id != current_msg_id:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=current_msg_id)
+        except TelegramBadRequest:
+            pass
+
+    await send_main_menu(bot, chat_id, user_id, is_activation=False)
     await callback.answer()
 
 
