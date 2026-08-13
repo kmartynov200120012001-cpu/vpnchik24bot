@@ -11,7 +11,7 @@ import logging
 
 from aiohttp import web
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import PLATEGA_MERCHANT_ID, PLATEGA_API_KEY, PLATEGA_CALLBACK_PATH, WEBHOOK_PORT, REFERRAL_BONUS_DAYS
+from config import PLATEGA_MERCHANT_ID, PLATEGA_API_KEY, PLATEGA_CALLBACK_PATH, WEBHOOK_PORT, REFERRAL_BONUS_DAYS, PAID_TRAFFIC_GB
 from database import db
 from xui_client import xui
 
@@ -65,13 +65,18 @@ async def handle_platega_callback(request: web.Request) -> web.Response:
         except Exception as e:
             logging.warning(f"Не удалось залогировать событие payment_confirmed для {user_id}: {e}")
 
-        # Создаём или продлеваем реального VPN-клиента в 3x-ui
+        # Создаём или продлеваем реального VPN-клиента в 3x-ui.
+        # При оплате выставляем лимит PAID_TRAFFIC_GB и сбрасываем накопленный трафик —
+        # счётчик обнуляется при каждой оплате/продлении, что даёт "999 ГБ в месяц".
         try:
             email, sub_id = await db.get_xui_client(user_id)
             if email:
-                await xui.update_client_expiry(email, days, extend=True)
+                await xui.update_client_expiry(
+                    email, days, extend=True,
+                    total_gb=PAID_TRAFFIC_GB,
+                )
             else:
-                result = await xui.add_client(user_id=user_id, days=days)
+                result = await xui.add_client(user_id=user_id, days=days, total_gb=PAID_TRAFFIC_GB)
                 await db.save_xui_client(user_id, result["email"], result["sub_id"])
         except Exception as e:
             logging.error(f"Не удалось создать/продлить 3x-ui клиента для {user_id} (tx={transaction_id}): {e}")
