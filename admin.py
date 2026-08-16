@@ -25,10 +25,6 @@ class SubscriptionFSM(StatesGroup):
 class PartnerFSM(StatesGroup):
     waiting_for_withdraw_amount = State()
 
-class XuiSubIdFSM(StatesGroup):
-    waiting_for_user_id = State()
-    waiting_for_sub_id = State()
-
 # ==================== ФИЛЬТР НА АДМИНА ====================
 def is_admin(user_id: int) -> bool:
     return user_id == ADMIN_ID
@@ -93,7 +89,6 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🤝 Партнёры", callback_data="admin_partners")],
             [InlineKeyboardButton(text="📨 Рассылка", callback_data="admin_broadcast")],
             [InlineKeyboardButton(text=" Управление подпиской", callback_data="admin_subscription")],
-            [InlineKeyboardButton(text="🔑 Обновить VPN-ключ", callback_data="admin_update_sub_id")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
             [InlineKeyboardButton(text="🔄 Стать новым пользователем", callback_data="admin_reset_self")],
         ]
@@ -115,7 +110,6 @@ def get_subscription_actions_keyboard(user_id: int) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="➕ Продлить на 90 дней", callback_data=f"sub_extend_{user_id}_90")],
             [InlineKeyboardButton(text="➕ Продлить на 365 дней", callback_data=f"sub_extend_{user_id}_365")],
             [InlineKeyboardButton(text="⏳ Продлить на N дней", callback_data=f"sub_custom_{user_id}")],
-            [InlineKeyboardButton(text="🔑 Обновить VPN-ключ", callback_data=f"admin_update_sub_id_user_{user_id}")],
             [InlineKeyboardButton(text="❌ Завершить подписку", callback_data=f"sub_end_{user_id}")],
             [InlineKeyboardButton(text="↩️ Назад к списку", callback_data="admin_users")],
         ]
@@ -826,114 +820,3 @@ async def on_partner_remove(callback: CallbackQuery):
         parse_mode="HTML",
     )
     await callback.answer("❌ Партнёр удалён", show_alert=True)
-
-# ==================== ОБНОВЛЕНИЕ VPN-КЛЮЧА (sub_id) ====================
-
-@admin_router.callback_query(F.data == "admin_update_sub_id")
-async def on_admin_update_sub_id_start(callback: CallbackQuery, state: FSMContext):
-    """Точка входа из главного меню админки."""
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
-        return
-    await state.set_state(XuiSubIdFSM.waiting_for_user_id)
-    await callback.message.edit_text(
-        "🔑 <b>Обновление VPN-ключа</b>\n\n"
-        "Введите Telegram ID пользователя:",
-        reply_markup=get_admin_back_keyboard(),
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
-@admin_router.callback_query(F.data.startswith("admin_update_sub_id_user_"))
-async def on_admin_update_sub_id_from_user(callback: CallbackQuery, state: FSMContext):
-    """Точка входа со страницы конкретного пользователя."""
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
-        return
-    user_id = int(callback.data.split("_")[-1])
-    await state.update_data(target_user_id=user_id)
-    await state.set_state(XuiSubIdFSM.waiting_for_sub_id)
-    await _show_sub_id_prompt(callback.message, user_id, edit=True)
-    await callback.answer()
-
-
-@admin_router.message(XuiSubIdFSM.waiting_for_user_id)
-async def on_xui_user_id_input(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        return
-    try:
-        user_id = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ Введите корректный числовой ID.")
-        return
-
-    user = await db.get_user(user_id)
-    if not user:
-        await message.answer(
-            f"❌ Пользователь <code>{user_id}</code> не найден.",
-            parse_mode="HTML",
-        )
-        return
-
-    await state.update_data(target_user_id=user_id)
-    await state.set_state(XuiSubIdFSM.waiting_for_sub_id)
-    await _show_sub_id_prompt(message, user_id, edit=False)
-
-
-async def _show_sub_id_prompt(message, user_id: int, edit: bool):
-    user = await db.get_user(user_id)
-    current_sub_id = user.get("xui_sub_id") or "—"
-    name = user.get("full_name") or "—"
-    text = (
-        f"🔑 <b>Обновление VPN-ключа</b>\n\n"
-        f"👤 {name} (<code>{user_id}</code>)\n"
-        f"Текущий sub_id: <code>{current_sub_id}</code>\n\n"
-        f"Введите новый sub_id из панели 3x-ui:"
-    )
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="↩️ Отмена", callback_data="admin_panel")],
-    ])
-    if edit:
-        await message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-    else:
-        await message.answer(text, reply_markup=kb, parse_mode="HTML")
-
-
-@admin_router.message(XuiSubIdFSM.waiting_for_sub_id)
-async def on_xui_new_sub_id_input(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        return
-
-    new_sub_id = message.text.strip()
-    if not new_sub_id:
-        await message.answer("❌ Sub_id не может быть пустым.")
-        return
-
-    data = await state.get_data()
-    user_id = data["target_user_id"]
-
-    await db.update_xui_sub_id(user_id, new_sub_id)
-    await state.clear()
-
-    user = await db.get_user(user_id)
-    name = user.get("full_name") or "—"
-
-    await message.answer(
-        f"✅ <b>VPN-ключ обновлён!</b>\n\n"
-        f"👤 {name} (<code>{user_id}</code>)\n"
-        f"🔗 Новый sub_id: <code>{new_sub_id}</code>\n\n"
-        f"Бот теперь показывает пользователю обновлённую ссылку подписки.",
-        reply_markup=get_subscription_actions_keyboard(user_id),
-        parse_mode="HTML",
-    )
-
-
-# Отмена FSM при нажатии «Назад в админку»
-@admin_router.callback_query(XuiSubIdFSM.waiting_for_user_id, F.data == "admin_panel")
-@admin_router.callback_query(XuiSubIdFSM.waiting_for_sub_id, F.data == "admin_panel")
-async def cancel_xui_sub_id_update(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        return
-    await state.clear()
-    await on_admin_panel(callback, state)
