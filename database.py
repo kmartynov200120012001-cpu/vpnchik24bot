@@ -221,6 +221,15 @@ class Database:
                 email, sub_id, user_id,
             )
 
+    async def update_xui_sub_id(self, user_id: int, sub_id: str) -> None:
+        """Обновляет только xui_sub_id пользователя в БД (используется из админки)."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET xui_sub_id = $1 WHERE user_id = $2",
+                sub_id, user_id,
+            )
+
     async def get_xui_client(self, user_id: int) -> tuple[str | None, str | None]:
         """Возвращает (email, sub_id) для пользователя, либо (None, None) если ещё не создан."""
         pool = await self._get_pool()
@@ -584,6 +593,32 @@ class Database:
         async with pool.acquire() as conn:
             value = await conn.fetchval("SELECT COUNT(*) FROM users")
             return value or 0
+
+    async def get_users_for_traffic_reset(self) -> list[dict]:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT user_id, xui_email
+                FROM users
+                WHERE is_trial = FALSE
+                  AND xui_email IS NOT NULL
+                  AND subscription_ends_at > CURRENT_TIMESTAMP
+                  AND (
+                        traffic_reset_at IS NULL
+                        OR traffic_reset_at <= CURRENT_TIMESTAMP - INTERVAL '30 days'
+                      )
+                """
+            )
+            return [dict(row) for row in rows]
+
+    async def update_traffic_reset_at(self, user_id: int) -> None:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET traffic_reset_at = CURRENT_TIMESTAMP WHERE user_id = $1",
+                user_id,
+            )
 
     async def close(self) -> None:
         if self._pool is not None:
