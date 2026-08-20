@@ -218,52 +218,6 @@ class XUIClient:
         )
         return {"sub_id": sub_id, "email": email}
 
-    async def sync_client_inbounds(self, email: str) -> list[int]:
-        """
-        Добавляет существующего клиента (по email) во все inbound'ы из XUI_INBOUND_IDS,
-        в которых его ещё нет. Возвращает список ID inbound'ов, в которые клиент был
-        добавлен в ходе этого вызова (пустой список — если он уже был везде).
-
-        Используется:
-        - скриптом миграции для существующих пользователей (migrate_inbounds.py),
-        - в будущем — при добавлении нового inbound: запустить миграцию и все клиенты
-          автоматически появятся в новом inbound'е.
-
-        Логика: API /clients/get/{email} возвращает поле inboundIds — список inbound'ов,
-        к которым клиент уже привязан. Сравниваем с XUI_INBOUND_IDS и добавляем недостающие.
-        """
-        data = await self._request("GET", f"/panel/api/clients/get/{email}")
-        if not data.get("success", False):
-            raise RuntimeError(f"3x-ui: клиент {email} не найден при синхронизации inbound'ов")
-
-        obj = data.get("obj") or {}
-        existing_ids: list[int] = obj.get("inboundIds") or []
-        missing_ids = [iid for iid in XUI_INBOUND_IDS if iid not in existing_ids]
-
-        if not missing_ids:
-            return []
-
-        client = obj.get("client") or {}
-        payload = {
-            "client": {
-                "email": client.get("email", email),
-                "subId": client.get("subId", ""),
-                "flow": client.get("flow", "xtls-rprx-vision"),
-                "totalGB": client.get("totalGB", 0),
-                "expiryTime": client.get("expiryTime", 0),
-                "tgId": client.get("tgId", 0),
-                "limitIp": client.get("limitIp", 0),
-                "enable": client.get("enable", True),
-            },
-            "inboundIds": missing_ids,
-        }
-
-        add_data = await self._request("POST", "/panel/api/clients/add", json=payload)
-        if not add_data.get("success", False):
-            raise RuntimeError(f"3x-ui sync_client_inbounds failed for {email}: {add_data}")
-
-        logging.info(f"3x-ui: клиент {email} добавлен в недостающие inbound'ы {missing_ids}")
-        return missing_ids
 
     async def get_client(self, email: str) -> dict | None:
         """
