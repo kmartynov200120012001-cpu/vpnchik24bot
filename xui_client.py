@@ -202,7 +202,7 @@ class XUIClient:
                 "totalGB": total_gb * 1024 ** 3 if total_gb > 0 else 0,
                 "expiryTime": expiry_time_ms,
                 "tgId": user_id,
-                "limitIp": 0,
+                "limitIp": 5,
                 "enable": True,
             },
             "inboundIds": inbound_ids,
@@ -217,7 +217,6 @@ class XUIClient:
             f"на {days} дн., лимит {total_gb} ГБ, inbound'ы {inbound_ids}"
         )
         return {"sub_id": sub_id, "email": email}
-
 
     async def get_client(self, email: str) -> dict | None:
         """
@@ -298,7 +297,6 @@ class XUIClient:
             f"(expiryTime={expiry_time_ms}, totalGB={total_gb_bytes})"
         )
 
-        # Сброс счётчика трафика — отдельный запрос к API панели
         if reset_traffic:
             reset_data = await self._request("POST", f"/panel/api/clients/resetClientTraffic/{email}")
             if not reset_data.get("success", False):
@@ -336,16 +334,13 @@ class XUIClient:
         """
         Немедленно завершает доступ клиента, не удаляя его из панели —
         выставляет expiryTime в прошлое (1 секунда назад) и отключает enable.
-        Используется в админке для кнопки "Завершить подписку": пользователь
-        теряет доступ сразу, но его запись/статистика трафика сохраняется,
-        и клиента можно будет снова продлить в будущем через update_client_expiry.
         """
         current = await self.get_client(email)
         if current is None:
             raise RuntimeError(f"3x-ui: клиент с email {email} не найден")
 
         import time
-        expired_ms = int(time.time() * 1000) - 1000  # 1 секунда назад
+        expired_ms = int(time.time() * 1000) - 1000
 
         payload = {
             "email": current["email"],
@@ -381,18 +376,12 @@ class XUIClient:
     def build_subscription_url(self, sub_id: str) -> str:
         """
         Subscription URL для Happ через "Добавить подписку".
-        Используется JSON-эндпоинт (а не обычный /sub/) — он отдаёт дополнительные
-        мета-поля (Profile-Title, Support-Url, Routing и т.д.), которые показывает Happ.
-        Настроено в панели: Panel Settings -> General -> JSON subscription:
-          URI Path: /json/, Listen Port: 2096 (тот же sub-сервис, проксируется nginx-ом
-          по /json/ -> 127.0.0.1:2096), JSON Reverse Proxy URI: https://<домен>/json/
         """
         return f"https://{XUI_PUBLIC_HOST}/json/{sub_id}"
 
     async def reset_client_traffic(self, email: str) -> None:
         """
         Сбрасывает накопленный трафик клиента без изменения срока подписки.
-        Вызывается фоновым циклом раз в 30 дней для платных пользователей.
         """
         data = await self._request("POST", f"/panel/api/clients/resetClientTraffic/{email}")
         if not data.get("success", False):
