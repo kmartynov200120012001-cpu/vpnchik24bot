@@ -1073,33 +1073,7 @@ async def check_expiring_subscriptions_loop() -> None:
         except Exception as e:
             logging.error(f"Ошибка в check_expiring_subscriptions_loop: {e}")
         await asyncio.sleep(EXPIRY_WARNING_CHECK_INTERVAL_SECONDS)
-
-
-async def check_traffic_reset_loop() -> None:
-    """
-    Фоновый цикл: раз в сутки сбрасывает трафик платным пользователям,
-    у которых прошло 30 дней с последнего сброса (или сброс ещё не делался).
-    Триальных пользователей не трогает — у них фиксированный лимит 30 ГБ
-    на весь период триала.
-    """
-    while True:
-        await asyncio.sleep(24 * 60 * 60)  # раз в сутки
-        try:
-            users = await db.get_users_for_traffic_reset()
-            if users:
-                logging.info(f"Сброс трафика: найдено {len(users)} пользователей")
-            for user in users:
-                email = user.get("xui_email")
-                user_id = user["user_id"]
-                try:
-                    await xui.reset_client_traffic(email)
-                    await db.update_traffic_reset_at(user_id)
-                    logging.info(f"Трафик сброшен: user={user_id} email={email}")
-                except Exception as e:
-                    logging.error(f"Не удалось сбросить трафик user={user_id} email={email}: {e}")
-        except Exception as e:
-            logging.error(f"Ошибка в check_traffic_reset_loop: {e}")
-
+        
 
 async def process_scheduled_deletions_loop() -> None:
     """
