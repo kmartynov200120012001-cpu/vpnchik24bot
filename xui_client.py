@@ -298,7 +298,7 @@ class XUIClient:
         )
 
         if reset_traffic:
-            reset_data = await self._request("POST", f"/panel/api/clients/resetClientTraffic/{email}")
+            reset_data = await self._request("POST", f"/panel/api/clients/resetTraffic/{email}")
             if not reset_data.get("success", False):
                 logging.warning(f"3x-ui: не удалось сбросить трафик клиента {email}: {reset_data}")
             else:
@@ -383,7 +383,7 @@ class XUIClient:
         """
         Сбрасывает накопленный трафик клиента без изменения срока подписки.
         """
-        data = await self._request("POST", f"/panel/api/clients/resetClientTraffic/{email}")
+        data = await self._request("POST", f"/panel/api/clients/resetTraffic/{email}")
         if not data.get("success", False):
             raise RuntimeError(f"3x-ui reset_client_traffic failed for {email}: {data}")
         logging.info(f"3x-ui: трафик клиента {email} сброшен")
