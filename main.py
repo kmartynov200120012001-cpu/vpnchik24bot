@@ -1108,7 +1108,6 @@ async def main():
     await run_webhook_server(bot)
     asyncio.create_task(check_expiring_subscriptions_loop())
     asyncio.create_task(process_scheduled_deletions_loop())
-    asyncio.create_task(check_traffic_reset_loop())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
