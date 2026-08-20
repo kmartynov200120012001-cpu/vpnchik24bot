@@ -30,11 +30,11 @@ PARTNER_COMMISSION_PERCENT = 30
 
 # --- Тарифы ---
 TARIFFS = [
-    {"name": "1 месяц",   "months": 1,  "days": 30,  "price": 199,  "callback": "tariff_1m"},
+    {"name": "1 месяц",   "months": 1,  "days": 30,  "price": 2,  "callback": "tariff_1m"},
     {"name": "3 месяца",  "months": 3,  "days": 90,  "price": 499,  "callback": "tariff_3m"},
     {"name": "6 месяцев", "months": 6,  "days": 180, "price": 899,  "callback": "tariff_6m"},
     {"name": "12 месяцев","months": 12, "days": 365, "price": 1599, "callback": "tariff_12m"},
-    {"name": "1 день",    "months": 0,  "days": 1,   "price": 11,   "callback": "tariff_1d"},
+    {"name": "1 день",    "months": 0,  "days": 1,   "price": 1,   "callback": "tariff_1d"},
 ]
 
 # --- 3X-UI (панель управления VPN) ---
