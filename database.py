@@ -1,21 +1,15 @@
 # database.py
 """
 Слой доступа к данным бота — PostgreSQL через asyncpg с connection pool.
-
-Совместимость с прежним кодом (main.py, admin.py, webhook.py): все datetime-поля
-(created_at, subscription_ends_at и т.п.) при чтении форматируются обратно в ISO-строки
-("YYYY-MM-DDTHH:MM:SS.ffffff"), как раньше отдавал aiosqlite/SQLite — благодаря этому
-остальной код, использующий datetime.fromisoformat(...), не пришлось переписывать.
 """
 
 import asyncpg
 from datetime import datetime, timedelta
 
-from config import DATABASE_URL, FREE_TRIAL_DAYS
+from config import DATABASE_URL, FREE_TRIAL_DAYS, TARIFFS as DEFAULT_TARIFFS
 
 
 def _iso(value) -> str | None:
-    """Приводит datetime к ISO-строке (как раньше отдавал SQLite); None остаётся None."""
     if value is None:
         return None
     if isinstance(value, datetime):
@@ -64,19 +58,9 @@ class Database:
                 """
             )
 
-            # Миграция: колонка для защиты от повторной отправки уведомления
-            # "подписка истекает через 1 день" — хранит subscription_ends_at,
-            # для которого уведомление уже было отправлено (чтобы не дублировать
-            # при каждой ежечасной проверке в течение суток).
             await conn.execute(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS expiry_notified_for TIMESTAMP"
             )
-
-            # Миграция: партнёрская программа. is_partner — имеет ли пользователь
-            # статус партнёра (может приглашать по своей ссылке и зарабатывать
-            # комиссию). partner_id — какой партнёр привёл ЭТОГО пользователя
-            # (аналог referrer_id, но для отдельной, "тяжёлой" партнёрской
-            # программы с денежной комиссией, а не бонусными днями).
             await conn.execute(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_partner BOOLEAN NOT NULL DEFAULT FALSE"
             )
@@ -84,8 +68,6 @@ class Database:
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS partner_id BIGINT"
             )
 
-            # История ручных отметок вывода денег партнёрам (админ отмечает вручную,
-            # это не автоматическая выплата — см. on_partner_withdraw_amount в admin.py).
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS partner_withdrawals (
@@ -127,8 +109,6 @@ class Database:
                 """
             )
 
-            # --- Лог событий воронки конверсии (просмотр тарифов, клик, создание/подтверждение оплаты) ---
-            # Используется только для аналитики (выгрузка в Google Sheets), не читается ботом обратно.
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS user_events (
@@ -142,10 +122,6 @@ class Database:
                 """
             )
 
-            # --- Отложенное удаление сообщений (например, уведомление об истечении подписки
-            # через 24 часа). Хранится в БД, а не в памяти процесса (asyncio.sleep) —
-            # переживает перезапуск бота: при рестарте фоновый цикл найдёт просроченные
-            # записи (delete_at уже в прошлом) и удалит сообщение сразу же.
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS scheduled_deletions (
@@ -157,6 +133,23 @@ class Database:
                 )
                 """
             )
+
+            # Таблица тарифов — редактируется через админку
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tariffs (
+                    id          SERIAL PRIMARY KEY,
+                    callback    TEXT UNIQUE NOT NULL,
+                    name        TEXT NOT NULL,
+                    months      INTEGER NOT NULL,
+                    days        INTEGER NOT NULL,
+                    price       INTEGER NOT NULL,
+                    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+                    sort_order  INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_scheduled_deletions_pending "
                 "ON scheduled_deletions (delete_at) WHERE deleted = FALSE"
@@ -167,6 +160,71 @@ class Database:
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_events_created_at ON user_events (created_at)"
             )
+
+        # Заполняем тарифы дефолтными значениями если таблица пустая
+        await self._init_default_tariffs()
+
+    async def _init_default_tariffs(self):
+        """Заполняет таблицу тарифов дефолтными значениями из config.py если она пустая."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            count = await conn.fetchval("SELECT COUNT(*) FROM tariffs")
+            if count == 0:
+                for i, t in enumerate(DEFAULT_TARIFFS):
+                    await conn.execute(
+                        "INSERT INTO tariffs (callback, name, months, days, price, is_active, sort_order) "
+                        "VALUES ($1, $2, $3, $4, $5, TRUE, $6) ON CONFLICT (callback) DO NOTHING",
+                        t["callback"], t["name"], t["months"], t["days"], t["price"], i,
+                    )
+
+    # ==================== ТАРИФЫ ====================
+
+    async def get_tariffs(self) -> list[dict]:
+        """Все активные тарифы в порядке sort_order — для показа пользователям."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM tariffs WHERE is_active = TRUE ORDER BY sort_order, id"
+            )
+            return [dict(row) for row in rows]
+
+    async def get_all_tariffs_admin(self) -> list[dict]:
+        """Все тарифы включая неактивные — для админки."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM tariffs ORDER BY sort_order, id"
+            )
+            return [dict(row) for row in rows]
+
+    async def get_tariff_by_callback(self, callback: str) -> dict | None:
+        """Один тариф по callback."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM tariffs WHERE callback = $1", callback
+            )
+            return dict(row) if row else None
+
+    async def update_tariff_price(self, callback: str, price: int) -> None:
+        """Обновить цену тарифа."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE tariffs SET price = $1 WHERE callback = $2",
+                price, callback,
+            )
+
+    async def set_tariff_active(self, callback: str, is_active: bool) -> None:
+        """Включить или выключить тариф."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE tariffs SET is_active = $1 WHERE callback = $2",
+                is_active, callback,
+            )
+
+    # ==================== ПОЛЬЗОВАТЕЛИ ====================
 
     async def add_user(
         self,
@@ -181,13 +239,10 @@ class Database:
             result = await conn.execute(
                 "INSERT INTO users (user_id, username, full_name, referrer_id, partner_id) "
                 "VALUES ($1, $2, $3, $4, $5) ON CONFLICT (user_id) DO NOTHING",
-                user_id,
-                username,
-                full_name,
+                user_id, username, full_name,
                 referrer_id if (referrer_id and referrer_id != user_id) else None,
                 partner_id if (partner_id and partner_id != user_id) else None,
             )
-            # asyncpg возвращает строку вида "INSERT 0 1" (вставлена 1 строка) или "INSERT 0 0"
             return result.endswith(" 1")
 
     async def get_user(self, user_id: int) -> dict | None:
@@ -207,13 +262,11 @@ class Database:
     async def get_menu_message_id(self, user_id: int) -> int | None:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            value = await conn.fetchval(
+            return await conn.fetchval(
                 "SELECT menu_message_id FROM users WHERE user_id = $1", user_id
             )
-            return value
 
     async def save_xui_client(self, user_id: int, email: str, sub_id: str) -> None:
-        """Привязывает 3x-ui клиента (email + subId) к пользователю — один на все платформы."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -222,7 +275,6 @@ class Database:
             )
 
     async def update_xui_sub_id(self, user_id: int, sub_id: str) -> None:
-        """Обновляет только xui_sub_id пользователя в БД (используется из админки)."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -231,7 +283,6 @@ class Database:
             )
 
     async def get_xui_client(self, user_id: int) -> tuple[str | None, str | None]:
-        """Возвращает (email, sub_id) для пользователя, либо (None, None) если ещё не создан."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -240,7 +291,6 @@ class Database:
             return (row["xui_email"], row["xui_sub_id"]) if row else (None, None)
 
     async def activate_trial(self, user_id: int) -> None:
-        """Активирует бесплатный период: trial_used=TRUE, is_trial=TRUE."""
         ends_at = datetime.now() + timedelta(days=FREE_TRIAL_DAYS)
         pool = await self._get_pool()
         async with pool.acquire() as conn:
@@ -251,7 +301,6 @@ class Database:
             )
 
     async def activate_subscription(self, user_id: int, days: int) -> None:
-        """Активирует платную подписку (is_trial=FALSE), продлевая от большего из (сейчас, текущий срок)."""
         user = await self.get_user(user_id)
         if user and user.get("subscription_ends_at"):
             try:
@@ -280,14 +329,6 @@ class Database:
             )
 
     async def get_users_expiring_soon(self) -> list[dict]:
-        """
-        Возвращает пользователей, чья подписка истекает в пределах ближайших
-        23-25 часов от текущего момента, и для которых уведомление об истечении
-        именно этой даты ещё не отправлялось (expiry_notified_for либо NULL,
-        либо не совпадает с текущим subscription_ends_at — важно на случай,
-        если пользователь продлил подписку заново уже после получения уведомления,
-        тогда для новой даты уведомление должно отправиться снова).
-        """
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
@@ -306,7 +347,6 @@ class Database:
             return [_row_to_dict(row) for row in rows]
 
     async def mark_expiry_notified(self, user_id: int, subscription_ends_at: datetime) -> None:
-        """Помечает, что уведомление об истечении для этой даты окончания уже отправлено."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -314,11 +354,9 @@ class Database:
                 subscription_ends_at, user_id,
             )
 
-    # ==================== ОТЛОЖЕННОЕ УДАЛЕНИЕ СООБЩЕНИЙ (переживает рестарт бота) ====================
+    # ==================== ОТЛОЖЕННОЕ УДАЛЕНИЕ ====================
 
     async def schedule_message_deletion(self, chat_id: int, message_id: int, delay_seconds: int) -> None:
-        """Планирует удаление сообщения через delay_seconds — запись сохраняется в БД,
-        поэтому переживает перезапуск бота (в отличие от asyncio.sleep в памяти)."""
         delete_at = datetime.now() + timedelta(seconds=delay_seconds)
         pool = await self._get_pool()
         async with pool.acquire() as conn:
@@ -328,8 +366,6 @@ class Database:
             )
 
     async def get_due_deletions(self) -> list[dict]:
-        """Возвращает все ещё не удалённые записи, для которых наступило время удаления
-        (включая просроченные, если бот был выключен дольше, чем планировалось)."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
@@ -346,15 +382,6 @@ class Database:
             )
 
     async def reset_user(self, user_id: int) -> tuple[bool, str | None]:
-        """
-        Полностью удаляет пользователя и связанные с ним транзакции из БД,
-        как если бы он никогда не запускал бота. Следующий /start создаст
-        запись заново со значениями по умолчанию.
-        Используется в админке для тестирования сценария "новый пользователь".
-
-        Возвращает (was_deleted, xui_email). xui_email отдаётся вызывающему
-        коду, чтобы он мог дополнительно удалить клиента и в самой панели 3x-ui.
-        """
         email, _ = await self.get_xui_client(user_id)
         pool = await self._get_pool()
         async with pool.acquire() as conn:
@@ -366,21 +393,18 @@ class Database:
     # ==================== РЕФЕРАЛЫ ====================
 
     async def get_referrer_id(self, user_id: int) -> int | None:
-        """Возвращает referrer_id пользователя (того, кто его пригласил), либо None."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            value = await conn.fetchval(
+            return await conn.fetchval(
                 "SELECT referrer_id FROM users WHERE user_id = $1", user_id
             )
-            return value
 
     async def get_referrals_count(self, user_id: int) -> int:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            value = await conn.fetchval(
+            return await conn.fetchval(
                 "SELECT COUNT(*) FROM users WHERE referrer_id = $1", user_id
-            )
-            return value or 0
+            ) or 0
 
     async def get_referrals(self, user_id: int) -> list[dict]:
         pool = await self._get_pool()
@@ -392,7 +416,7 @@ class Database:
             )
             return [_row_to_dict(row) for row in rows]
 
-    # ==================== ТРАНЗАКЦИИ (ОПЛАТА) ====================
+    # ==================== ТРАНЗАКЦИИ ====================
 
     async def create_transaction(
         self,
@@ -404,7 +428,6 @@ class Database:
         amount: float,
         currency: str = "RUB",
     ) -> None:
-        """Сохраняет созданную, но ещё не оплаченную транзакцию."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -434,7 +457,6 @@ class Database:
     # ==================== РЕФЕРАЛЬНЫЕ БОНУСЫ ====================
 
     async def has_referral_bonus_for_transaction(self, transaction_id: str) -> bool:
-        """Защита от повторного начисления — Platega может присылать callback несколько раз."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             value = await conn.fetchval(
@@ -445,7 +467,6 @@ class Database:
     async def record_referral_bonus(
         self, transaction_id: str, referrer_id: int, referral_id: int, days_awarded: int
     ) -> None:
-        """Записывает факт начисления бонуса рефереру за оплату его реферала."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -455,16 +476,14 @@ class Database:
             )
 
     async def get_referral_bonus_days_total(self, referrer_id: int) -> int:
-        """Суммарное количество бонусных дней, начисленных рефереру за всё время."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            value = await conn.fetchval(
+            return await conn.fetchval(
                 "SELECT COALESCE(SUM(days_awarded), 0) FROM referral_bonuses WHERE referrer_id = $1",
                 referrer_id,
-            )
-            return value or 0
+            ) or 0
 
-    # ==================== ВОРОНКА КОНВЕРСИИ (ДЛЯ АНАЛИТИКИ / GOOGLE SHEETS) ====================
+    # ==================== ВОРОНКА ====================
 
     async def log_event(
         self,
@@ -473,13 +492,6 @@ class Database:
         tariff_callback: str | None = None,
         transaction_id: str | None = None,
     ) -> None:
-        """
-        Записывает событие воронки: viewed_tariffs / clicked_tariff /
-        payment_created / payment_confirmed. Используется только для внешней
-        аналитики (синк в Google Sheets), бот эти данные обратно не читает —
-        поэтому не блокирует основной поток работы: ошибка здесь не должна
-        приводить к падению хендлера, вызывающий код оборачивает в try/except.
-        """
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -491,7 +503,6 @@ class Database:
     # ==================== ПАРТНЁРСКАЯ ПРОГРАММА ====================
 
     async def set_partner_status(self, user_id: int, is_partner: bool) -> None:
-        """Выдаёт или снимает статус партнёра."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -499,7 +510,6 @@ class Database:
             )
 
     async def get_all_partners(self) -> list[dict]:
-        """Все пользователи со статусом партнёра."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
@@ -509,29 +519,24 @@ class Database:
             return [_row_to_dict(row) for row in rows]
 
     async def get_partner_referrals_count(self, partner_id: int) -> int:
-        """Сколько всего пользователей пришло по партнёрской ссылке (независимо от оплаты)."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            value = await conn.fetchval(
+            return await conn.fetchval(
                 "SELECT COUNT(*) FROM users WHERE partner_id = $1", partner_id
-            )
-            return value or 0
+            ) or 0
 
     async def get_partner_referrals_with_trial_count(self, partner_id: int) -> int:
-        """Сколько приведённых партнёром пользователей активировали бесплатный триал."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            value = await conn.fetchval(
+            return await conn.fetchval(
                 "SELECT COUNT(*) FROM users WHERE partner_id = $1 AND trial_used = TRUE",
                 partner_id,
-            )
-            return value or 0
+            ) or 0
 
     async def get_partner_referrals_with_paid_count(self, partner_id: int) -> int:
-        """Сколько уникальных приведённых партнёром пользователей хотя бы раз оплатили."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            value = await conn.fetchval(
+            return await conn.fetchval(
                 """
                 SELECT COUNT(DISTINCT t.user_id)
                 FROM transactions t
@@ -539,15 +544,12 @@ class Database:
                 WHERE u.partner_id = $1 AND t.status = 'CONFIRMED'
                 """,
                 partner_id,
-            )
-            return value or 0
+            ) or 0
 
     async def get_partner_referrals_total_paid_amount(self, partner_id: int) -> float:
-        """Суммарная сумма всех подтверждённых оплат приведённых партнёром пользователей —
-        именно от этой суммы считается партнёрская комиссия (PARTNER_COMMISSION_PERCENT)."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            value = await conn.fetchval(
+            return float(await conn.fetchval(
                 """
                 SELECT COALESCE(SUM(t.amount), 0)
                 FROM transactions t
@@ -555,11 +557,9 @@ class Database:
                 WHERE u.partner_id = $1 AND t.status = 'CONFIRMED'
                 """,
                 partner_id,
-            )
-            return float(value or 0)
+            ) or 0)
 
     async def add_partner_withdrawal(self, partner_id: int, amount: float) -> None:
-        """Записывает ручную отметку вывода денег партнёру (делает админ)."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -568,16 +568,14 @@ class Database:
             )
 
     async def get_partner_withdrawn_amount(self, partner_id: int) -> float:
-        """Суммарно сколько партнёру уже выведено за всё время."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            value = await conn.fetchval(
+            return float(await conn.fetchval(
                 "SELECT COALESCE(SUM(amount), 0) FROM partner_withdrawals WHERE partner_id = $1",
                 partner_id,
-            )
-            return float(value or 0)
+            ) or 0)
 
-    # ==================== АДМИН-МЕТОДЫ ====================
+    # ==================== АДМИН ====================
 
     async def get_all_users(self) -> list[dict]:
         pool = await self._get_pool()
@@ -591,34 +589,7 @@ class Database:
     async def get_users_count(self) -> int:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            value = await conn.fetchval("SELECT COUNT(*) FROM users")
-            return value or 0
-
-    async def get_users_for_traffic_reset(self) -> list[dict]:
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT user_id, xui_email
-                FROM users
-                WHERE is_trial = FALSE
-                  AND xui_email IS NOT NULL
-                  AND subscription_ends_at > CURRENT_TIMESTAMP
-                  AND (
-                        traffic_reset_at IS NULL
-                        OR traffic_reset_at <= CURRENT_TIMESTAMP - INTERVAL '30 days'
-                      )
-                """
-            )
-            return [dict(row) for row in rows]
-
-    async def update_traffic_reset_at(self, user_id: int) -> None:
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE users SET traffic_reset_at = CURRENT_TIMESTAMP WHERE user_id = $1",
-                user_id,
-            )
+            return await conn.fetchval("SELECT COUNT(*) FROM users") or 0
 
     async def close(self) -> None:
         if self._pool is not None:
