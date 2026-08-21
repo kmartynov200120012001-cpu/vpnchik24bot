@@ -1,3 +1,5 @@
+# main.py
+
 import asyncio
 import io
 import logging
@@ -19,7 +21,7 @@ from aiogram.types import (
     InputTextMessageContent,
 )
 from aiogram.exceptions import TelegramBadRequest
-from config import BOT_TOKEN, FREE_TRIAL_DAYS, TARIFFS, PARTNER_COMMISSION_PERCENT, TRIAL_TRAFFIC_GB
+from config import BOT_TOKEN, FREE_TRIAL_DAYS, PARTNER_COMMISSION_PERCENT, TRIAL_TRAFFIC_GB
 from database import db
 from admin import admin_router
 from payments import create_payment
@@ -65,13 +67,6 @@ def get_days_since_registration(created_at_str: str) -> int:
 
 
 def pluralize_ru(number: int, one: str, few: str, many: str) -> str:
-    """
-    Правильное склонение русских существительных по числу.
-    one — форма для 1, 21, 31... (например, "день", "час")
-    few — форма для 2-4, 22-24... (например, "дня", "часа")
-    many — форма для 0, 5-20, 25-30... (например, "дней", "часов")
-    Учитывает исключение для чисел 11-14 (всегда "many": "11 дней", "12 дней" и т.д.)
-    """
     n = abs(number) % 100
     if 11 <= n <= 14:
         return many
@@ -84,7 +79,6 @@ def pluralize_ru(number: int, one: str, few: str, many: str) -> str:
 
 
 async def get_or_create_subscription_link(user_id: int) -> str:
-    """Возвращает subscription URL. Создаёт клиента в 3x-ui если его нет."""
     email, sub_id = await db.get_xui_client(user_id)
     if email and sub_id:
         return xui.build_subscription_url(sub_id)
@@ -153,7 +147,6 @@ def get_referral_keyboard(ref_link: str, referrals_count: int) -> InlineKeyboard
 
 
 def get_partner_keyboard(ref_link: str) -> InlineKeyboardMarkup:
-    """Клавиатура партнёрского кабинета."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=" Скопировать ссылку", copy_text=CopyTextButton(text=ref_link))],
         [InlineKeyboardButton(text="🔄 Обновить", callback_data="partner_refresh")],
@@ -172,7 +165,6 @@ def get_device_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-# Клавиатура для инструкции Android
 def _android_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done")],
@@ -184,7 +176,6 @@ def _android_instruction_kb() -> InlineKeyboardMarkup:
     ])
 
 
-# Клавиатура для инструкции iOS
 def _ios_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done")],
@@ -196,7 +187,6 @@ def _ios_instruction_kb() -> InlineKeyboardMarkup:
     ])
 
 
-# Клавиатура для инструкции Windows
 def _windows_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done")],
@@ -208,7 +198,6 @@ def _windows_instruction_kb() -> InlineKeyboardMarkup:
     ])
 
 
-# Клавиатура для инструкции macOS
 def _macos_instruction_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Готово", callback_data="setup_done")],
@@ -220,7 +209,6 @@ def _macos_instruction_kb() -> InlineKeyboardMarkup:
     ])
 
 
-# Старая клавиатура для Android TV
 def _tv_step2_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📺 Подключить AndroidTV", url="https://telegra.ph/Instrukciya-Android-TV-08-10")],
@@ -236,9 +224,10 @@ def _format_tariff_text(tariff: dict) -> str:
     return f"{tariff['name']} — {tariff['price']} ₽"
 
 
-def get_tariffs_keyboard() -> InlineKeyboardMarkup:
+async def get_tariffs_keyboard() -> InlineKeyboardMarkup:
+    tariffs = await db.get_tariffs()
     buttons = []
-    for t in TARIFFS:
+    for t in tariffs:
         text = _format_tariff_text(t)
         cb = t["callback"]
         if t["months"] == 6:
@@ -284,10 +273,8 @@ def get_welcome_text(name: str) -> str:
 
 
 def get_paid_profile_text(user: dict) -> str:
-    """Текст профиля для активной платной подписки (2 варианта)."""
     ends_at_str = user.get("subscription_ends_at")
     sub_id = user.get("xui_sub_id")
-    # Получаем реальную ссылку из xui или плейсхолдер
     if sub_id:
         key_link = xui.build_subscription_url(sub_id)
     else:
@@ -298,15 +285,11 @@ def get_paid_profile_text(user: dict) -> str:
     try:
         ends_at = datetime.fromisoformat(ends_at_str)
         now = datetime.now()
-        # Корректировка времени: +1 час для отображения МСК
         display_end_time = ends_at + timedelta(hours=1)
         delta = ends_at - now
         if delta.total_seconds() <= 0:
             return get_profile_text(user)
-        # Форматируем дату окончания (с учетом +1 часа)
-        # Для варианта > 3 дней: полная дата
         end_date_full = display_end_time.strftime("%d %B %Y, %H:%M (МСК)")
-        # Для варианта <= 3 дней: короткая дата (день месяца и время)
         end_date_short = display_end_time.strftime("%d %B в %H:%M")
         months_ru = {
             "January": "января", "February": "февраля", "March": "марта", "April": "апреля",
@@ -318,7 +301,6 @@ def get_paid_profile_text(user: dict) -> str:
             end_date_short = end_date_short.replace(eng, ru)
         days_left = delta.days
         hours_left = delta.seconds // 3600
-        # Форматирование времени для варианта "< 3 дней" (если нужно будет вернуть обратный отсчет)
         if days_left > 0:
             day_word = pluralize_ru(days_left, "день", "дня", "дней")
             hour_word = pluralize_ru(hours_left, "час", "часа", "часов")
@@ -327,7 +309,6 @@ def get_paid_profile_text(user: dict) -> str:
             hour_word = pluralize_ru(hours_left, "час", "часа", "часов")
             time_left_text = f"{hours_left} {hour_word}"
         if days_left > 3:
-            # Вариант 1: Больше 3 дней
             text = (
                 f"🟢 <b>VPN работает</b>\n\n"
                 f"<blockquote><b>Активен до:</b>\n"
@@ -337,7 +318,6 @@ def get_paid_profile_text(user: dict) -> str:
                 f"<code>{key_link}</code>"
             )
         else:
-            # Вариант 2: 3 дня и меньше (НОВЫЙ ТЕКСТ)
             text = (
                 f"🟢 <b>VPN работает</b>\n\n"
                 f"<blockquote><b>❗Доступ истекает через:</b>\n"
@@ -432,8 +412,6 @@ async def send_main_menu(
 ) -> None:
     user_data = await db.get_user(user_id)
     code, _, _ = get_subscription_status(user_data)
-    # Для нового пользователя сразу показываем выбор устройства —
-    # триал активируется автоматически когда пользователь выбирает устройство.
     if code == "new":
         await delete_old_menu(bot, chat_id, user_id)
         sent = await bot.send_message(
@@ -444,7 +422,6 @@ async def send_main_menu(
         )
         await db.save_menu_message_id(user_id, sent.message_id)
         return
-    # При первой активации триала показываем гифку-поздравление
     if code == "trial_active" and is_activation:
         await delete_old_menu(bot, chat_id, user_id)
         await bot.send_animation(chat_id=chat_id, animation=FSInputFile(CONGRATS_GIF_PATH))
@@ -466,13 +443,11 @@ async def send_main_menu(
     else:
         text = get_profile_text(user_data)
         keyboard = get_keyboard_for_user(user_data)
-    # force_recreate=True (например, при команде /start) — всегда удаляем старое сообщение
     if force_recreate:
         await delete_old_menu(bot, chat_id, user_id)
         sent = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="HTML")
         await db.save_menu_message_id(user_id, sent.message_id)
         return
-    # Обычные переходы между текстовыми экранами — пробуем отредактировать
     old_id = await db.get_menu_message_id(user_id)
     if old_id:
         try:
@@ -494,7 +469,6 @@ async def send_main_menu(
 
 # ==================== ПАРТНЁРСКИЙ КАБИНЕТ ====================
 async def _get_partner_cabinet_content(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
-    """Формирует текст и клавиатуру для партнёрского кабинета."""
     bot_info = await bot.get_me()
     partner_link = f"https://t.me/{bot_info.username}?start=partner_{user_id}"
 
@@ -558,7 +532,6 @@ async def cmd_start(message: Message):
         partner_id,
     )
 
-    # Если перешли по ссылке "Стать партнёром" — сразу показываем партнёрский кабинет
     if partner_auto:
         await db.set_partner_status(message.from_user.id, True)
         text, keyboard = await _get_partner_cabinet_content(message.from_user.id)
@@ -583,7 +556,6 @@ async def cmd_start(message: Message):
 
 @router.message(Command("partner"))
 async def cmd_partner(message: Message):
-    """Партнёрский кабинет: статистика по партнёрским рефералам и заработку."""
     user_id = message.from_user.id
 
     user = await db.get_user(user_id)
@@ -606,7 +578,6 @@ async def cmd_partner(message: Message):
 
 @router.callback_query(F.data == "partner_refresh")
 async def on_partner_refresh(callback: CallbackQuery):
-    """Обновляет статистику в партнёрском кабинете."""
     user_id = callback.from_user.id
 
     text, keyboard = await _get_partner_cabinet_content(user_id)
@@ -628,14 +599,9 @@ async def on_partner_refresh(callback: CallbackQuery):
 # ==================== INLINE MODE ДЛЯ ПАРТНЁРОВ ====================
 @router.inline_query()
 async def inline_partner_invite(query: InlineQuery):
-    """
-    Inline mode для приглашения партнёров.
-    Юзер пишет @botname partner_invite в любом чате -> появляется превью сообщения.
-    """
     user_id = query.from_user.id
     user = await db.get_user(user_id)
 
-    # Проверяем, является ли пользователь партнёром
     if not user.get("is_partner", False):
         await query.answer(
             results=[
@@ -656,7 +622,6 @@ async def inline_partner_invite(query: InlineQuery):
         )
         return
 
-    # Формируем текст приглашения
     bot_info = await bot.get_me()
     partner_link = f"https://t.me/{bot_info.username}?start=partner_auto"
 
@@ -667,12 +632,10 @@ async def inline_partner_invite(query: InlineQuery):
         "•  Статистика в реальном времени\n"
     )
 
-    # Создаём клавиатуру с кнопкой
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🤝 Стать партнёром", url=partner_link, style="success")]
     ])
 
-    # Отвечаем inline query
     await query.answer(
         results=[
             InlineQueryResultArticle(
@@ -687,7 +650,7 @@ async def inline_partner_invite(query: InlineQuery):
                 reply_markup=kb,
             )
         ],
-        cache_time=300,  # Кэшируем на 5 минут
+        cache_time=300,
         is_personal=True,
     )
 
@@ -705,9 +668,6 @@ async def on_back_to_menu(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     current_msg_id = callback.message.message_id
 
-    # Если callback пришёл не из сохранённого сообщения главного меню
-    # (например, из уведомления об истечении подписки) — удаляем его,
-    # чтобы оно не оставалось висеть после перехода в меню.
     saved_menu_id = await db.get_menu_message_id(user_id)
     if saved_menu_id != current_msg_id:
         try:
@@ -732,7 +692,7 @@ async def on_tariffs(callback: CallbackQuery):
         "✓ <i>До 3 устройств</i>\n"
         "✓ <i>Современный протокол — устойчив к ограничениям сети</i>\n\n"
         "Дольше срок — ниже цена за месяц 👇",
-        reply_markup=get_tariffs_keyboard(),
+        reply_markup=await get_tariffs_keyboard(),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -822,7 +782,7 @@ async def on_my_referrals(callback: CallbackQuery):
 async def on_tariff_selected(callback: CallbackQuery):
     await callback.answer("💳 Создаём ссылку на оплату...")
     tariff_cb = callback.data
-    tariff = next((t for t in TARIFFS if t["callback"] == tariff_cb), None)
+    tariff = await db.get_tariff_by_callback(tariff_cb)
     if not tariff:
         await callback.message.answer("⚠️ Тариф не найден, попробуйте выбрать снова.")
         return
@@ -890,7 +850,6 @@ async def on_connect_vpn(callback: CallbackQuery):
     await callback.answer()
 
 
-# --- ANDROID ---
 @router.callback_query(F.data == "connect_android")
 async def on_connect_android(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
@@ -913,7 +872,6 @@ async def on_connect_android(cb: CallbackQuery):
     await cb.answer()
 
 
-# --- iOS ---
 @router.callback_query(F.data == "connect_ios")
 async def on_connect_ios(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
@@ -934,7 +892,6 @@ async def on_connect_ios(cb: CallbackQuery):
     await cb.answer()
 
 
-# --- WINDOWS ---
 @router.callback_query(F.data == "connect_windows")
 async def on_connect_windows(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
@@ -953,7 +910,6 @@ async def on_connect_windows(cb: CallbackQuery):
     await cb.answer()
 
 
-# --- MACOS ---
 @router.callback_query(F.data == "connect_macos")
 async def on_connect_macos(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
@@ -974,14 +930,12 @@ async def on_connect_macos(cb: CallbackQuery):
     await cb.answer()
 
 
-# --- ОБЩИЙ ОБРАБОТЧИК «ГОТОВО» ---
 @router.callback_query(F.data == "setup_done")
 async def on_setup_done(cb: CallbackQuery):
     await send_main_menu(bot, cb.message.chat.id, cb.from_user.id, is_activation=False)
     await cb.answer()
 
 
-# --- ANDROID TV ---
 @router.callback_query(F.data == "connect_android_tv")
 async def on_connect_android_tv(cb: CallbackQuery):
     user_data = await db.get_user(cb.from_user.id)
@@ -1003,7 +957,6 @@ async def on_android_tv_done(cb: CallbackQuery):
 # ==================== ЮРИДИЧЕСКИЕ КОМАНДЫ ====================
 @router.message(Command("terms"))
 async def cmd_terms(message: Message):
-    """Политика конфиденциальности и Пользовательское соглашение."""
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❌ Закрыть", callback_data="delete_notification")]
     ])
@@ -1020,7 +973,6 @@ async def cmd_terms(message: Message):
         pass
 
 
-# Ловит абсолютно любое сообщение от пользователя, не пойманное хендлерами выше
 @router.message()
 async def delete_any_other_message(message: Message):
     try:
@@ -1030,13 +982,12 @@ async def delete_any_other_message(message: Message):
 
 
 # ==================== УВЕДОМЛЕНИЯ ОБ ИСТЕЧЕНИИ ПОДПИСКИ ====================
-EXPIRY_WARNING_CHECK_INTERVAL_SECONDS = 60 * 60  # раз в час
-EXPIRY_WARNING_AUTODELETE_SECONDS = 24 * 60 * 60  # автостирание уведомления через 1 день
-SCHEDULED_DELETIONS_CHECK_INTERVAL_SECONDS = 60 * 5  # проверка отложенных удалений раз в 5 минут
+EXPIRY_WARNING_CHECK_INTERVAL_SECONDS = 60 * 60
+EXPIRY_WARNING_AUTODELETE_SECONDS = 24 * 60 * 60
+SCHEDULED_DELETIONS_CHECK_INTERVAL_SECONDS = 60 * 5
 
 
 async def send_expiry_warning(user: dict) -> None:
-    """Отправляет одному пользователю предупреждение о скором окончании подписки."""
     user_id = user["user_id"]
     name = user.get("full_name") or "друг"
     text = (
@@ -1048,7 +999,7 @@ async def send_expiry_warning(user: dict) -> None:
         sent = await bot.send_message(
             chat_id=user_id,
             text=text,
-            reply_markup=get_tariffs_keyboard(),
+            reply_markup=await get_tariffs_keyboard(),
             parse_mode="HTML",
         )
     except Exception as e:
@@ -1056,13 +1007,10 @@ async def send_expiry_warning(user: dict) -> None:
         return
     ends_at = datetime.fromisoformat(user["subscription_ends_at"])
     await db.mark_expiry_notified(user_id, ends_at)
-    # Планируем удаление через БД, а не через asyncio.sleep в памяти — так запись
-    # переживёт перезапуск бота (который случается при каждом обновлении кода).
     await db.schedule_message_deletion(user_id, sent.message_id, EXPIRY_WARNING_AUTODELETE_SECONDS)
 
 
 async def check_expiring_subscriptions_loop() -> None:
-    """Фоновый цикл: раз в час проверяет, у кого подписка истекает через ~1 день, и уведомляет."""
     while True:
         try:
             users = await db.get_users_expiring_soon()
@@ -1073,15 +1021,9 @@ async def check_expiring_subscriptions_loop() -> None:
         except Exception as e:
             logging.error(f"Ошибка в check_expiring_subscriptions_loop: {e}")
         await asyncio.sleep(EXPIRY_WARNING_CHECK_INTERVAL_SECONDS)
-        
+
 
 async def process_scheduled_deletions_loop() -> None:
-    """
-    Фоновый цикл: раз в 5 минут удаляет сообщения, для которых наступило
-    (или уже прошло) запланированное время удаления. Работает через БД —
-    если бот был выключен дольше срока удаления, просроченные сообщения
-    будут удалены сразу же при следующем запуске, а не потеряны навсегда.
-    """
     while True:
         try:
             due = await db.get_due_deletions()
@@ -1089,7 +1031,7 @@ async def process_scheduled_deletions_loop() -> None:
                 try:
                     await bot.delete_message(chat_id=item["chat_id"], message_id=item["message_id"])
                 except TelegramBadRequest:
-                    pass  # сообщение уже удалено вручную или чат недоступен — это нормально
+                    pass
                 except Exception as e:
                     logging.warning(f"Не удалось удалить запланированное сообщение {item}: {e}")
                 await db.mark_deletion_done(item["id"])
