@@ -591,6 +591,28 @@ class Database:
         async with pool.acquire() as conn:
             return await conn.fetchval("SELECT COUNT(*) FROM users") or 0
 
+    async def get_trial_users_count(self) -> int:
+        """Сколько пользователей активировали триал."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            return await conn.fetchval("SELECT COUNT(*) FROM users WHERE trial_used = TRUE") or 0
+
+    async def get_paid_users_count(self) -> int:
+        """Сколько уникальных пользователей хотя бы раз оплатили."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT COUNT(DISTINCT user_id) FROM transactions WHERE status = 'CONFIRMED'"
+            ) or 0
+
+    async def get_total_payments_amount(self) -> float:
+        """Суммарная сумма всех подтверждённых оплат."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            return float(await conn.fetchval(
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE status = 'CONFIRMED'"
+            ) or 0)
+
     async def close(self) -> None:
         if self._pool is not None:
             await self._pool.close()
