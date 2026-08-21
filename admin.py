@@ -1,3 +1,5 @@
+# admin.py
+
 import logging
 from datetime import datetime
 from aiogram import Router, F
@@ -174,10 +176,17 @@ async def on_admin_stats(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
-    count = await db.get_users_count()
+    total = await db.get_users_count()
+    trial = await db.get_trial_users_count()
+    paid = await db.get_paid_users_count()
+    amount = await db.get_total_payments_amount()
+    amount_str = f"{int(amount)}" if amount == int(amount) else f"{amount:.2f}"
     await callback.message.edit_text(
         f"📊 <b>Статистика</b>\n\n"
-        f"Всего пользователей: <b>{count}</b>",
+        f"👥 Всего пользователей: <b>{total}</b>\n"
+        f"🎁 Активировали триал: <b>{trial}</b>\n"
+        f"💳 Оплатили подписку: <b>{paid}</b>\n"
+        f"💰 Сумма оплат: <b>{amount_str} ₽</b>",
         reply_markup=get_admin_back_keyboard(),
         parse_mode="HTML",
     )
